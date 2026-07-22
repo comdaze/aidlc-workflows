@@ -20,12 +20,12 @@
     "render-surface": "tui"
   },
   "counts": {
-    "total": 473,
+    "total": 474,
     "enumeratedByClass": {
       "function": 245,
       "audit": 72,
       "scope": 9,
-      "stage": 32,
+      "stage": 33,
       "hook": 13,
       "subcommand": 95,
       "render-surface": 7
@@ -3876,7 +3876,7 @@
     },
     {
       "unitClass": "stage",
-      "unitId": "inception/application-design",
+      "unitId": "inception/contract-design",
       "minMechanism": "none",
       "coveredBy": [],
       "status": "UNCOVERED"
@@ -3884,6 +3884,13 @@
     {
       "unitClass": "stage",
       "unitId": "inception/delivery-planning",
+      "minMechanism": "none",
+      "coveredBy": [],
+      "status": "UNCOVERED"
+    },
+    {
+      "unitClass": "stage",
+      "unitId": "inception/domain-design",
       "minMechanism": "none",
       "coveredBy": [],
       "status": "UNCOVERED"

@@ -1,5 +1,7 @@
 ---
 slug: domain-design
+number: "2.6"
+name: Domain Design
 phase: inception
 execution: CONDITIONAL
 condition: Execute when new components or logical building blocks are needed. Skip when changes are modifications to existing components only.
@@ -83,36 +85,47 @@ Collect answers following stage-protocol.md §3 question flow (offer interaction
 
 Create `<record>/inception/domain-design/components.md`. This single artifact carries both a machine-readable catalogue and the human-readable view.
 
-**Part A — machine-readable catalogue (fenced `yaml` block).** Author a fenced ```yaml block near the top of the file listing every component. This block is the source of truth; the human view below is derived from it. Each component carries a behaviour description, its dependencies (components it calls) and dependent components (components that call it), and the entities it owns with their attributes:
+**Entity capture depth.** Capture entities at the **ownership + shape** level only — which component owns each entity, its identifier, its attribute names, and any cross-component references. Do NOT specify data types, validation constraints, allowed values, or relationship cardinality here — that full schema belongs to Functional Design (`entities.md`). Every entity has **exactly one** owning component; ambiguous ownership is a design smell to resolve before the gate.
+
+**Part A — machine-readable catalogue (fenced `yaml` block).** Author a fenced ```yaml block near the top of the file listing every component. This block is the source of truth; the human view below is derived from it:
 
 ```yaml
 components:
-  - name: <ComponentName>
-    behaviour: <what this component does — business rules, validation, security constraints, key behaviours; be specific>
-    depends_on:
-      - component: <component it calls>
-        interaction: <why and what for>
-    dependents:
-      - component: <component that calls this one>
-        interaction: <why and what for>
-    entities:
+  - name: <ComponentName>              # PascalCase, unique
+    summary: <one-line purpose>
+    behaviour: >
+      <business rules, validation logic, security constraints, key behaviours — be specific>
+    responsibilities:
+      - <what this component owns>
+    depends_on:                        # components it CALLS ([] if none)
+      - component: <OtherComponentName>
+        interaction: <why / what for>
+        style: <sync | async | event>
+    dependents:                        # components that CALL this one ([] if none)
+      - component: <OtherComponentName>
+        interaction: <why / what for>
+    external_dependencies:             # infra / third-party this component USES (optional)
+      - name: <e.g. PostgreSQL | Redis | Stripe API>
+        kind: <database | cache | queue | object-store | third-party-api | other>
+        purpose: <what it's used for>
+    entities:                          # entities owned by THIS component ([] if none)
       - name: <EntityName>
-        attributes: [<attribute-name>, <attribute-name>]
-  - name: <AnotherComponent>
-    behaviour: <...>
-    depends_on: []
-    dependents: []
-    entities:
-      - name: <EntityName>
-        attributes: [<attribute-name>]
+        identifier: <attribute that uniquely identifies it>
+        attributes: [<attributeName>, <attributeName>]
+        references:                    # entities in OTHER components this points to (optional)
+          - entity: <OtherEntityName>
+            owned_by: <OwningComponentName>
+            relationship: <plain-language, e.g. "each Order belongs to one Customer">
 ```
 
-Rules for the block: name each component exactly once; every `component:` named in a `depends_on`/`dependents` list must be a declared component; a component may not depend on itself; every entity has exactly one owning component (no entity appears under two components).
+Well-formedness rules (all must hold): each component name is unique; every `component:`/`owned_by` named anywhere is a declared component; no component depends on itself; `depends_on`/`dependents` are symmetric (if A depends_on B, B lists A in dependents); every entity is owned by exactly one component and has an identifier; every `references.entity` is declared under its `owned_by` component; the dependency graph is acyclic (call out any deliberate cycle in the Rationale). Infrastructure, databases, caches, queues, and third-party services are `external_dependencies` — never components.
 
 **Part B — human-readable view (below the block).** Derive these sections from the catalogue — same data, presented for humans:
 
-- **Component Diagram** — a `mermaid` diagram showing which components call which, with labelled edges.
-- **Component Summary** — a table: `| Component | Purpose | Dependencies | Entities Owned |`.
+- **Component Diagram** — a `mermaid` graph, one node per component, one labelled edge per `depends_on`.
+- **Component Summary** — a table: `| Component | Purpose | Depends On | Dependents | Entities Owned |`.
+- **Entity Ownership** — a table: `| Entity | Owning Component | Identifier | Attributes | References |`.
+- **External Dependencies** — a table: `| Component | Dependency | Kind | Purpose |`.
 - **Rationale** — a table explaining why each component is a separate building block (distinct lifecycle, distinct concern, distinct data ownership, distinct change rate — pick what applies).
 
 #### Component-boundary options (when >1 viable decomposition)

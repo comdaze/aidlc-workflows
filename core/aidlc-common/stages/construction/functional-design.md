@@ -34,6 +34,7 @@ consumes:
     required: false
 requires_stage:
   - units-generation
+  - contract-design
 sensors:
   - required-sections
   - upstream-coverage

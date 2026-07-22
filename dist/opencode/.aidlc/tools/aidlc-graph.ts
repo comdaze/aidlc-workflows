@@ -1672,10 +1672,13 @@ export function compileStageGraph(): {
       }
       slugToFile.set(slug, filePath);
 
-      // Existing slug -> keep its pinned number + name. New slug -> auto-seed
-      // both: number = next free index in this phase, name = title-cased slug.
-      let number = numberBySlug.get(slug);
-      let name = nameBySlug.get(slug);
+      // Existing slug -> keep its pinned number + name. New/renamed slug ->
+      // honor an authored frontmatter `number:`/`name:` when present (the core
+      // source of truth for a stage the compiled graph has no pin for yet);
+      // otherwise auto-seed: number = next free index in this phase, name =
+      // title-cased slug.
+      let number = parsed.number ?? numberBySlug.get(slug);
+      let name = parsed.name ?? nameBySlug.get(slug);
       if (!number || !name) {
         const prefix = PHASES.indexOf(phase as Phase);
         if (prefix < 0) {

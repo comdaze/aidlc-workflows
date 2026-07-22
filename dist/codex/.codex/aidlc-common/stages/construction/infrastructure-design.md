@@ -36,9 +36,7 @@ consumes:
     required: true
   - artifact: components
     required: true
-  - artifact: services
-    required: true
-  - artifact: business-logic-model
+  - artifact: functional-spec
     required: true
 requires_stage:
   - units-generation
@@ -89,10 +87,10 @@ Load aidlc-aws-platform-agent (lead) persona from `agents/aidlc-aws-platform-age
 Read all prior design artifacts for context:
 - NFR design from `<record>/construction/{unit-name}/nfr-design/` (if exists)
 - Functional design from `<record>/construction/{unit-name}/functional-design/` (if exists)
-- Application design from `<record>/inception/application-design/` (if exists)
+- Domain design (component catalogue) from `<record>/inception/domain-design/components.md` (if exists)
 - NFR requirements from `<record>/construction/{unit-name}/nfr-requirements/` (if exists)
 
-Incremental scopes (infra) skip the application-design and functional-design chain by design. When those inputs are absent, derive the component/service topology from the NFR requirements and, on brownfield, the reverse-engineered code knowledge base at `aidlc/spaces/<active-space>/codekb/<repo>/` — never invent the content of a missing artifact.
+Incremental scopes (infra) skip the domain-design and functional-design chain by design. When those inputs are absent, derive the component topology from the NFR requirements and, on brownfield, the reverse-engineered code knowledge base at `aidlc/spaces/<active-space>/codekb/<repo>/` — never invent the content of a missing artifact.
 
 ### Step 3: Generate Infrastructure Questions
 
@@ -163,7 +161,7 @@ This stage's outputs are markdown design artefacts under `<record>/construction/
 The imported sensors check those outputs:
 
 - **`required-sections`** verifies the output contains the registry default (≥2 H2 headings).
-- **`upstream-coverage`** verifies the output prose references each artefact declared in this stage's `consumes:` frontmatter (this stage consumes `performance-design`, `security-design`, `scalability-design`, `reliability-design`, `logical-components`, `components`, `services`, `business-logic-model`).
+- **`upstream-coverage`** verifies the output prose references each artefact declared in this stage's `consumes:` frontmatter (this stage consumes `performance-design`, `security-design`, `scalability-design`, `reliability-design`, `logical-components`, `components`, `functional-spec`).
 - **`linter`** runs against any TypeScript/JavaScript snippets the design includes (matches `**/*.{ts,js}`).
 - **`type-check`** runs against any TypeScript/TSX snippets the design includes (matches `**/*.{ts,tsx}`).
 

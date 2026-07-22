@@ -198,9 +198,9 @@ describe("t66 producersOf / consumersOf (in-process)", () => {
 
 describe("t66 topoSort (in-process)", () => {
   // .sh:79-84
-  test("topoSort(loadGraph()) returns 32 stages starting with workspace-scaffold", () => {
+  test("topoSort(loadGraph()) returns 33 stages starting with workspace-scaffold", () => {
     const order = topoSort(loadGraph());
-    expect(`${order.length}:${order[0]}`).toBe("32:workspace-scaffold");
+    expect(`${order.length}:${order[0]}`).toBe("33:workspace-scaffold");
   });
   // .sh:86-95
   test("topoSort throws on cycle input", () => {
@@ -765,20 +765,17 @@ describe("t66 validateScope (in-process)", () => {
         "ci-pipeline->build-test-results",
         "ci-pipeline->code-summary",
         "deployment-execution->build-test-results",
-        "infrastructure-design->business-logic-model",
         "infrastructure-design->components",
-        "infrastructure-design->services",
-        "nfr-design->business-logic-model",
-        "nfr-requirements->business-logic-model",
-        "nfr-requirements->business-rules",
+        "infrastructure-design->functional-spec",
+        "nfr-design->functional-spec",
+        "nfr-requirements->functional-spec",
+        "nfr-requirements->rules",
       ],
       mvp: [],
       poc: ["code-generation->unit-of-work"],
       refactor: [
         "code-generation->unit-of-work",
-        "functional-design->component-methods",
         "functional-design->components",
-        "functional-design->services",
         "functional-design->unit-of-work",
       ],
       "security-patch": [
@@ -788,8 +785,8 @@ describe("t66 validateScope (in-process)", () => {
         "deployment-pipeline->cicd-pipeline",
         "deployment-pipeline->deployment-architecture",
         "deployment-pipeline->quality-gates",
-        "nfr-requirements->business-logic-model",
-        "nfr-requirements->business-rules",
+        "nfr-requirements->functional-spec",
+        "nfr-requirements->rules",
       ],
       workshop: ["refined-mockups->user-flow", "refined-mockups->wireframes"],
     };
@@ -1014,9 +1011,9 @@ describe("t66 designer export (spawnSync CLI-boundary)", () => {
       artifacts: unknown[];
       agents: unknown[];
     };
-    expect(out.stages.length).toBe(32);
+    expect(out.stages.length).toBe(33);
     expect(Object.keys(out.scopes).length).toBe(9);
-    expect(out.artifacts.length).toBe(122);
+    expect(out.artifacts.length).toBe(119);
     expect(out.agents.length).toBe(14);
   });
 

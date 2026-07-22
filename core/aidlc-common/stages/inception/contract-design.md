@@ -1,5 +1,7 @@
 ---
 slug: contract-design
+number: "2.8"
+name: Contract Design
 phase: inception
 execution: CONDITIONAL
 condition: Execute when the system decomposes into more than one unit that must integrate. Skip for a single-unit system where there are no inter-unit boundaries to formalise.

@@ -48,7 +48,7 @@ const RP = `aidlc/spaces/${DEFAULT_SPACE}/intents/${DEFAULT_RECORD_DIR}`;
 
 // functional-design's REQUIRED produces[] - the coverage set. frontend-components
 // is under optional_produces and is deliberately NOT here.
-const FD_REQUIRED = ["business-logic-model", "business-rules", "domain-entities"];
+const FD_REQUIRED = ["entities", "rules", "functional-spec"];
 const FD_OPTIONAL = "frontend-components";
 
 const tempDirs: string[] = [];
@@ -97,7 +97,7 @@ function constructionState(current: string, skeletonStance = "on"): string {
 - [ ] build-and-test — EXECUTE
 
 ### INCEPTION PHASE
-- [-] application-design — EXECUTE
+- [-] domain-design — EXECUTE
 
 ## Current Status
 - **Lifecycle Phase**: CONSTRUCTION
@@ -180,8 +180,8 @@ describe("t206 optional_produces exempt from per-unit coverage", () => {
     const proj = seedProject("functional-design");
     seedBoltDag(proj, ["alpha", "beta"]);
     coverUnit(proj, "alpha", "functional-design", [
-      "business-logic-model",
-      "business-rules",
+      "entities",
+      "rules",
       FD_OPTIONAL,
     ]);
     const d = runNext(proj);
@@ -228,8 +228,8 @@ describe("t206 optional_produces exempt from per-unit coverage", () => {
     coverUnit(proj, "alpha", "functional-design", FD_REQUIRED);
     // beta covered by only two required + the optional -> still uncovered.
     coverUnit(proj, "beta", "functional-design", [
-      "business-logic-model",
-      "business-rules",
+      "entities",
+      "rules",
       FD_OPTIONAL,
     ]);
     const d = runReport(proj, [
@@ -257,7 +257,7 @@ describe("t206 optional_produces exempt from per-unit coverage", () => {
     );
     // and still lists a required one.
     expect(d.produces).toContain(
-      `${RP}/construction/alpha/functional-design/business-logic-model.md`,
+      `${RP}/construction/alpha/functional-design/functional-spec.md`,
     );
   }, 30000);
 });

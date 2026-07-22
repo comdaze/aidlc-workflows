@@ -1,5 +1,7 @@
 ---
 slug: delivery-planning
+number: "2.9"
+name: Delivery Planning
 phase: inception
 execution: ALWAYS
 condition: Always executes — capstone Inception stage, produces the detailed execution plan for Construction and Operation
@@ -60,7 +62,7 @@ Load aidlc-architect-agent for build order validation.
 Read all Inception phase artifacts:
 - Requirements from `<record>/inception/requirements-analysis/`
 - User stories from `<record>/inception/user-stories/`
-- Application design from `<record>/inception/application-design/`
+- Domain design (component catalogue) from `<record>/inception/domain-design/components.md`
 - Units from `<record>/inception/units-generation/`
 - Team formation from `<record>/ideation/team-formation/` (if exists)
 

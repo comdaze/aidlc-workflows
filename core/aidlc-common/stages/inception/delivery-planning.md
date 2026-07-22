@@ -1,5 +1,7 @@
 ---
 slug: delivery-planning
+number: "2.9"
+name: Delivery Planning
 phase: inception
 execution: ALWAYS
 condition: Always executes — capstone Inception stage, produces the detailed execution plan for Construction and Operation

@@ -1120,12 +1120,12 @@
     ]
   },
   {
-    "slug": "application-design",
+    "slug": "domain-design",
     "number": "2.6",
-    "name": "Application Design",
+    "name": "Domain Design",
     "phase": "inception",
     "execution": "CONDITIONAL",
-    "condition": "Execute when new components or services are needed, or service layer design is required. Skip when changes are modifications to existing components only.",
+    "condition": "Execute when new components or logical building blocks are needed. Skip when changes are modifications to existing components only.",
     "lead_agent": "aidlc-architect-agent",
     "support_agents": [
       "aidlc-aws-platform-agent",
@@ -1133,11 +1133,7 @@
     ],
     "mode": "inline",
     "produces": [
-      "components",
-      "component-methods",
-      "services",
-      "component-dependency",
-      "decisions"
+      "components"
     ],
     "consumes": [
       {
@@ -1180,7 +1176,7 @@
     "reviewer": "aidlc-architecture-reviewer-agent",
     "reviewer_max_iterations": 2,
     "inputs": "<record>/inception/requirements-analysis/requirements.md, <record>/inception/user-stories/stories.md (if produced), RE artifacts (if brownfield)",
-    "outputs": "components.md, component-methods.md, services.md, component-dependency.md, decisions.md (under this stage's record dir, engine-resolved)",
+    "outputs": "components.md (under this stage's record dir, engine-resolved) — carries a fenced ```yaml component catalogue plus a human-readable mermaid diagram and summary table",
     "rules_in_context": [
       {
         "path": "aidlc/spaces/default/memory/org.md",
@@ -1235,22 +1231,6 @@
         "required": true
       },
       {
-        "artifact": "component-methods",
-        "required": true
-      },
-      {
-        "artifact": "services",
-        "required": true
-      },
-      {
-        "artifact": "component-dependency",
-        "required": true
-      },
-      {
-        "artifact": "decisions",
-        "required": true
-      },
-      {
         "artifact": "requirements",
         "required": true
       },
@@ -1260,7 +1240,7 @@
       }
     ],
     "requires_stage": [
-      "application-design"
+      "domain-design"
     ],
     "sensors": [
       "required-sections",
@@ -1274,7 +1254,7 @@
     ],
     "reviewer": "aidlc-architecture-reviewer-agent",
     "reviewer_max_iterations": 2,
-    "inputs": "<record>/inception/application-design/ (all design artifacts), <record>/inception/requirements-analysis/requirements.md, <record>/inception/user-stories/stories.md (if produced)",
+    "inputs": "<record>/inception/domain-design/components.md, <record>/inception/requirements-analysis/requirements.md, <record>/inception/user-stories/stories.md (if produced)",
     "outputs": "unit-of-work.md, unit-of-work-dependency.md, unit-of-work-story-map.md (under this stage's record dir, engine-resolved)",
     "rules_in_context": [
       {
@@ -1308,8 +1288,88 @@
     ]
   },
   {
-    "slug": "delivery-planning",
+    "slug": "contract-design",
     "number": "2.8",
+    "name": "Contract Design",
+    "phase": "inception",
+    "execution": "CONDITIONAL",
+    "condition": "Execute when the system decomposes into more than one unit that must integrate. Skip for a single-unit system where there are no inter-unit boundaries to formalise.",
+    "lead_agent": "aidlc-architect-agent",
+    "support_agents": [
+      "aidlc-aws-platform-agent"
+    ],
+    "mode": "inline",
+    "produces": [
+      "contract-summary"
+    ],
+    "consumes": [
+      {
+        "artifact": "unit-of-work",
+        "required": true
+      },
+      {
+        "artifact": "unit-of-work-dependency",
+        "required": true
+      },
+      {
+        "artifact": "components",
+        "required": false
+      },
+      {
+        "artifact": "requirements",
+        "required": false
+      }
+    ],
+    "requires_stage": [
+      "units-generation"
+    ],
+    "sensors": [
+      "required-sections",
+      "upstream-coverage"
+    ],
+    "scopes": [
+      "enterprise",
+      "feature",
+      "mvp"
+    ],
+    "reviewer": "aidlc-architecture-reviewer-agent",
+    "reviewer_max_iterations": 2,
+    "inputs": "<record>/inception/units-generation/unit-of-work.md, <record>/inception/units-generation/unit-of-work-dependency.md, <record>/inception/domain-design/components.md (if produced), <record>/inception/requirements-analysis/requirements.md",
+    "outputs": "contract-summary.md (under this stage's record dir, engine-resolved) — a human-readable overview of every inter-unit contract, each with a fenced spec block (OpenAPI / AsyncAPI / shared schema) inline",
+    "rules_in_context": [
+      {
+        "path": "aidlc/spaces/default/memory/org.md",
+        "scope": "org"
+      },
+      {
+        "path": "aidlc/spaces/default/memory/team.md",
+        "scope": "team"
+      },
+      {
+        "path": "aidlc/spaces/default/memory/project.md",
+        "scope": "project"
+      },
+      {
+        "path": "aidlc/spaces/default/memory/phases/inception.md",
+        "scope": "phase"
+      }
+    ],
+    "sensors_applicable": [
+      {
+        "id": "required-sections",
+        "path": ".kiro/sensors/aidlc-required-sections.md",
+        "matches": "**/{aidlc-docs,intents}/**"
+      },
+      {
+        "id": "upstream-coverage",
+        "path": ".kiro/sensors/aidlc-upstream-coverage.md",
+        "matches": "**/{aidlc-docs,intents}/**"
+      }
+    ]
+  },
+  {
+    "slug": "delivery-planning",
+    "number": "2.9",
     "name": "Delivery Planning",
     "phase": "inception",
     "execution": "ALWAYS",
@@ -1420,27 +1480,27 @@
     "mode": "inline",
     "for_each": "unit-of-work",
     "produces": [
-      "business-logic-model",
-      "business-rules",
-      "domain-entities"
+      "entities",
+      "rules",
+      "functional-spec"
     ],
     "optional_produces": [
       "frontend-components"
     ],
     "produces_kinds": {
-      "business-logic-model": [
+      "entities": [
+        "service",
+        "spec",
+        "library"
+      ],
+      "rules": [
+        "service",
+        "spec",
+        "library"
+      ],
+      "functional-spec": [
         "service",
         "ui",
-        "library"
-      ],
-      "business-rules": [
-        "service",
-        "spec",
-        "library"
-      ],
-      "domain-entities": [
-        "service",
-        "spec",
         "library"
       ],
       "frontend-components": [
@@ -1465,16 +1525,13 @@
         "required": true
       },
       {
-        "artifact": "component-methods",
-        "required": true
-      },
-      {
-        "artifact": "services",
-        "required": true
+        "artifact": "contract-summary",
+        "required": false
       }
     ],
     "requires_stage": [
-      "units-generation"
+      "units-generation",
+      "contract-design"
     ],
     "sensors": [
       "required-sections",
@@ -1491,8 +1548,8 @@
     ],
     "reviewer": "aidlc-architecture-reviewer-agent",
     "reviewer_max_iterations": 2,
-    "inputs": "unit-of-work.md, unit-of-work-story-map.md, requirements.md, application design artifacts",
-    "outputs": "business-logic-model.md, business-rules.md, domain-entities.md, CONDITIONAL: frontend-components.md (under this stage's per-unit record dir, engine-resolved); per-kind applicability via produces_kinds (untagged unit: all)",
+    "inputs": "unit-of-work.md, unit-of-work-story-map.md, requirements.md, domain-design components.md, contract-design contract-summary.md (if produced)",
+    "outputs": "entities.md, rules.md, functional-spec.md, CONDITIONAL: frontend-components.md (under this stage's per-unit record dir, engine-resolved); per-kind applicability via produces_kinds (untagged unit: all). entities.md and rules.md each carry a fenced ```yaml source-of-truth block; functional-spec.md is the derived human view.",
     "rules_in_context": [
       {
         "path": "aidlc/spaces/default/memory/org.md",
@@ -1570,11 +1627,11 @@
     },
     "consumes": [
       {
-        "artifact": "business-logic-model",
+        "artifact": "functional-spec",
         "required": true
       },
       {
-        "artifact": "business-rules",
+        "artifact": "rules",
         "required": true
       },
       {
@@ -1709,7 +1766,7 @@
         "required": true
       },
       {
-        "artifact": "business-logic-model",
+        "artifact": "functional-spec",
         "required": true
       }
     ],
@@ -1845,11 +1902,7 @@
         "required": true
       },
       {
-        "artifact": "services",
-        "required": true
-      },
-      {
-        "artifact": "business-logic-model",
+        "artifact": "functional-spec",
         "required": true
       }
     ],
@@ -1933,15 +1986,15 @@
     ],
     "consumes": [
       {
-        "artifact": "business-logic-model",
+        "artifact": "functional-spec",
         "required": false
       },
       {
-        "artifact": "business-rules",
+        "artifact": "rules",
         "required": false
       },
       {
-        "artifact": "domain-entities",
+        "artifact": "entities",
         "required": false
       },
       {
