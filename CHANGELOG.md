@@ -1,17 +1,18 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
-## [2.5.12] - 2026-07-25
+## [2.5.13] - 2026-07-25
 
-New harness: **GitHub Copilot** — one `dist/copilot/` install serves BOTH the Copilot CLI (>= 1.0.74) and VS Code agent mode (>= 1.130), which read the same `.github/{skills,agents,hooks}` tree and root `AGENTS.md`. Hooks enforce natively on both surfaces (blocking PreToolUse deny + blocking Stop). **Install:** copy `dist/copilot/.aidlc/`, `dist/copilot/aidlc/`, and merge `dist/copilot/.github/` + `AGENTS.md` into your project, then trust the folder (`trustedFolders` in `~/.copilot/config.json`); headless `copilot -p` runs additionally need `GITHUB_COPILOT_PROMPT_MODE_REPO_HOOKS=1` — hooks silently no-op without both (`/aidlc --doctor` checks).
+New harness: **GitHub Copilot** — one `dist/copilot/` install serves BOTH the Copilot CLI (>= 1.0.74) and VS Code agent mode (>= 1.130), which read the same `.github/{skills,agents,hooks}` tree and root `AGENTS.md`. Hooks enforce natively on the CLI (blocking PreToolUse deny + blocking Stop; VS Code carries the same wiring and normalized tool names, pending live IDE verification). **Install:** copy `dist/copilot/.aidlc/`, `dist/copilot/aidlc/`, and merge `dist/copilot/.github/` + `AGENTS.md` into your project (use `cp -R dir/.` so a re-copy does not nest `.aidlc/.aidlc`), then trust the folder (`trustedFolders` in `~/.copilot/config.json`); headless `copilot -p` runs additionally need `GITHUB_COPILOT_PROMPT_MODE_REPO_HOOKS=1` — hooks silently no-op without both (`/aidlc --doctor` checks).
 
 * `/aidlc` runs on Copilot via `.github/skills/aidlc/` (slash-invocable on both surfaces); per-stage and scope runners ship as `.github/skills/aidlc-<slug>/`.
-* The 14 personas ship as native custom agents (`.github/agents/aidlc-*-agent.md`) with no `model:` pin — agents inherit the session model on both surfaces (the two disagree on model-value syntax; a pinned IDE display name is a hard 400 on the CLI under BYOK).
-* Reviewer read-scope and the state-transition guard BLOCK on Copilot (`permissionDecision: deny`), and the forwarding-loop Stop hook blocks with the Claude-shaped `decision: block` contract — the first harness besides Claude Code with both channels enforcing.
-* `/aidlc --doctor` gains a Copilot arm: engine + `.github` wiring presence, CLI version floor 1.0.74, folder-trust check, and the headless env-var reminder.
-* `/aidlc space <name>` re-points the method include on this harness by rewriting the `@aidlc/spaces/<space>/memory/...` import lines in the project-root `AGENTS.md`.
+* The 14 personas ship as native custom agents (`.github/agents/aidlc-*-agent.md`) with no `model:` pin — agents inherit the session model on both surfaces (the two disagree on model-value syntax; a pinned IDE display name is a hard 400 on the CLI under BYOK). Delegated worker personas carry a built-in `tools:` allowlist that omits Copilot's `agent` tool, so nested delegation is off.
+* Reviewer read-scope and the state-transition guard BLOCK on Copilot (`permissionDecision: deny`), and the forwarding-loop Stop hook blocks with the Claude-shaped `decision: block` contract — the first harness besides Claude Code with both channels enforcing. The adapter normalizes VS Code tool names (`run_in_terminal`, `insert_edit_into_file`, …) to the core contract and enforces the read-sweep surface (`LS`/`Glob`/`Grep`).
+* `/aidlc --doctor` gains a Copilot arm: engine + `.github` wiring presence, CLI version floor 1.0.74, a JSONC/symlink-tolerant folder-trust check (advisory when no CLI is installed), and the headless env-var reminder.
+* `/aidlc space <name>` re-points the method include on this harness by rewriting the `@aidlc/spaces/<space>/memory/...` import lines in the project-root `AGENTS.md` and in the `.github/agents/` persona twins.
 * BYOK note: with `COPILOT_PROVIDER_TYPE=anthropic` against Amazon Bedrock's Anthropic-compatible endpoint, set `COPILOT_MODEL` to a Copilot-catalog name and carry the Bedrock model id in `COPILOT_PROVIDER_WIRE_MODEL`.
-* New tests: `t248-copilot-packaging`, `t249-copilot-adapter` (deterministic), and the `AIDLC_COPILOT_EXEC_LIVE=1`-gated `t-exec-copilot-status` live journey.
+* The reviewer-scope and state-transition hooks now export `run(input)` so the compiled-binary hook route dispatches them (the direct-run exit-2 + stderr contract is unchanged); this repairs the compiled path for the Codex and Kiro adapters too.
+* New tests: `t248-copilot-packaging`, `t249-copilot-adapter` (deterministic, live-captured payload fixtures), and the `AIDLC_COPILOT_EXEC_LIVE=1`-gated `t-exec-copilot-status` live journey.
 
 ## [2.5.11] - 2026-07-24
 
