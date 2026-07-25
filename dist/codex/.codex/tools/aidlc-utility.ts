@@ -1223,14 +1223,24 @@ function handleDoctor(projectDir: string, flags: Record<string, string> = {}): v
       });
     }
     if (harness === ".aidlc") {
-      // opencode's adapter is a plugin (its hook seam) in the .opencode shell,
-      // not a hooks/ shim inside the engine dir.
-      const adapterPath = join(projectDir, ".opencode", "plugin", "aidlc-opencode-adapter.ts");
-      results.push({
-        pass: existsSync(adapterPath),
-        label: "plugin/aidlc-opencode-adapter.ts present (hook wiring)",
-        fix: "copy from `dist/opencode/.opencode/plugin/aidlc-opencode-adapter.ts`",
-      });
+      // Two harnesses ship the .aidlc engine dir; the adapter file names the
+      // flavor. Copilot: a hooks/ shim inside the engine dir (wired by
+      // .github/hooks/aidlc.json). opencode: a plugin in the .opencode shell.
+      const copilotAdapter = join(projectDir, harness, "hooks", "aidlc-copilot-adapter.ts");
+      if (existsSync(copilotAdapter) || existsSync(join(projectDir, ".github", "hooks", "aidlc.json"))) {
+        results.push({
+          pass: existsSync(copilotAdapter),
+          label: "hooks/aidlc-copilot-adapter.ts present (hook shim)",
+          fix: "copy from `dist/copilot/.aidlc/hooks/aidlc-copilot-adapter.ts`",
+        });
+      } else {
+        const adapterPath = join(projectDir, ".opencode", "plugin", "aidlc-opencode-adapter.ts");
+        results.push({
+          pass: existsSync(adapterPath),
+          label: "plugin/aidlc-opencode-adapter.ts present (hook wiring)",
+          fix: "copy from `dist/opencode/.opencode/plugin/aidlc-opencode-adapter.ts`",
+        });
+      }
     }
   }
 
@@ -1297,6 +1307,85 @@ function handleDoctor(projectDir: string, flags: Record<string, string> = {}): v
       pass: true,
       label:
         "hook trust: ensure [hooks.state] entries are pre-seeded in $CODEX_HOME/config.toml (`bun scripts/package.ts codex trust --project <dir>`) or run one TUI trust pass",
+    });
+  } else if (
+    harness === ".aidlc" &&
+    (existsSync(join(projectDir, ".github", "hooks", "aidlc.json")) ||
+      existsSync(join(projectDir, harness, "hooks", "aidlc-copilot-adapter.ts")))
+  ) {
+    // Copilot (CLI + VS Code, one install): the wiring config is
+    // .github/hooks/aidlc.json; skills and personas ride .github/{skills,agents}.
+    for (const [file, what, from] of [
+      [".github/hooks/aidlc.json", "hook wiring", "dist/copilot/.github/hooks/aidlc.json"],
+      [".github/skills/aidlc/SKILL.md", "/aidlc entry point", "dist/copilot/.github/skills/aidlc/SKILL.md"],
+      [".github/agents/aidlc-developer-agent.md", "persona custom agents", "dist/copilot/.github/agents/"],
+    ] as const) {
+      results.push({
+        pass: existsSync(join(projectDir, file)),
+        label: `${file} present (${what})`,
+        fix: `copy from \`${from}\``,
+      });
+    }
+    // Copilot CLI version floor: 1.0.74 is the line this port was verified
+    // against (PascalCase hook registration delivering snake_case payloads,
+    // hookSpecificOutput deny honored, SessionEnd + SubagentStart/Stop
+    // events, --output-format json). The CLI is optional when only VS Code
+    // drives the install, so a missing binary is advisory, not a failure.
+    const MIN_COPILOT = [1, 0, 74] as const;
+    const copilotVer = Bun.spawnSync(["copilot", "--version"], {
+      stdout: "pipe",
+      stderr: "ignore",
+    });
+    const verText = (copilotVer.stdout?.toString() ?? "").trim();
+    const verMatch = verText.match(/(\d+)\.(\d+)\.(\d+)/);
+    if (!verMatch) {
+      results.push({
+        pass: true,
+        label:
+          "copilot CLI not on PATH — fine when VS Code agent mode drives this install; for CLI use install @github/copilot >= 1.0.74",
+      });
+    } else {
+      const v = [Number(verMatch[1]), Number(verMatch[2]), Number(verMatch[3])];
+      const ok =
+        v[0] > MIN_COPILOT[0] ||
+        (v[0] === MIN_COPILOT[0] &&
+          (v[1] > MIN_COPILOT[1] || (v[1] === MIN_COPILOT[1] && v[2] >= MIN_COPILOT[2])));
+      results.push({
+        pass: ok,
+        label: `copilot CLI version ${verMatch[0]} >= 1.0.74 (PascalCase hook registration + deny/block channels verified on this line)`,
+        fix: "run `copilot update` or `npm i -g @github/copilot`",
+      });
+    }
+    // Folder trust: untrusted project hooks silently never fire (no warning
+    // anywhere on the Copilot side — the doctor is the only surface that says
+    // so). trustedFolders lives in ~/.copilot/config.json (COPILOT_HOME).
+    try {
+      const configPath = join(
+        process.env.COPILOT_HOME ?? join(process.env.HOME ?? "", ".copilot"),
+        "config.json",
+      );
+      const trusted = existsSync(configPath)
+        ? ((JSON.parse(readFileSync(configPath, "utf-8")) as { trustedFolders?: string[] })
+            .trustedFolders ?? [])
+        : [];
+      results.push({
+        pass: trusted.includes(projectDir),
+        label: "project folder in ~/.copilot/config.json trustedFolders (hooks silently no-op without it)",
+        fix: `add "${projectDir}" to trustedFolders in ~/.copilot/config.json (or accept the CLI's interactive trust prompt)`,
+      });
+    } catch {
+      results.push({
+        pass: false,
+        label: "could not read ~/.copilot/config.json to verify folder trust",
+        fix: "ensure ~/.copilot/config.json exists and lists this project in trustedFolders",
+      });
+    }
+    // Headless reminder (advisory pass-with-label): -p/prompt-mode runs skip
+    // repo hooks unless the env var opts in.
+    results.push({
+      pass: true,
+      label:
+        "headless runs: set GITHUB_COPILOT_PROMPT_MODE_REPO_HOOKS=1 for `copilot -p` sessions — repo hooks are off by default in prompt mode",
     });
   } else if (harness === ".aidlc") {
     // opencode: the wiring config is the project-root opencode.json/jsonc
