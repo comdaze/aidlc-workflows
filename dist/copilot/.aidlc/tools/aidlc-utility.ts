@@ -5,6 +5,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -1332,11 +1333,14 @@ function handleDoctor(projectDir: string, flags: Record<string, string> = {}): v
     // events, --output-format json). The CLI is optional when only VS Code
     // drives the install, so a missing binary is advisory, not a failure.
     const MIN_COPILOT = [1, 0, 74] as const;
-    const copilotVer = Bun.spawnSync(["copilot", "--version"], {
-      stdout: "pipe",
-      stderr: "ignore",
-    });
-    const verText = (copilotVer.stdout?.toString() ?? "").trim();
+    // Bun.spawnSync THROWS (ENOENT) on a missing executable rather than
+    // returning - probe with Bun.which first so a VS Code-only install (no
+    // CLI) gets the advisory branch instead of aborting the whole doctor.
+    const copilotBin = Bun.which("copilot");
+    const copilotVer = copilotBin
+      ? Bun.spawnSync([copilotBin, "--version"], { stdout: "pipe", stderr: "ignore" })
+      : null;
+    const verText = (copilotVer?.stdout?.toString() ?? "").trim();
     const verMatch = verText.match(/(\d+)\.(\d+)\.(\d+)/);
     if (!verMatch) {
       results.push({
@@ -1359,25 +1363,49 @@ function handleDoctor(projectDir: string, flags: Record<string, string> = {}): v
     // Folder trust: untrusted project hooks silently never fire (no warning
     // anywhere on the Copilot side — the doctor is the only surface that says
     // so). trustedFolders lives in ~/.copilot/config.json (COPILOT_HOME).
+    // Tolerances, all field-observed: the CLI writes the file with //-comment
+    // headers (JSONC — strip before parsing), entries may carry trailing
+    // slashes, and the project may be reached via a symlink (compare
+    // realpath-normalized). Unreadable/absent config is ADVISORY, not a
+    // failure: a VS Code-only install has no CLI and no config, and VS Code
+    // manages its own workspace trust.
     try {
       const configPath = join(
         process.env.COPILOT_HOME ?? join(process.env.HOME ?? "", ".copilot"),
         "config.json",
       );
-      const trusted = existsSync(configPath)
-        ? ((JSON.parse(readFileSync(configPath, "utf-8")) as { trustedFolders?: string[] })
-            .trustedFolders ?? [])
-        : [];
-      results.push({
-        pass: trusted.includes(projectDir),
-        label: "project folder in ~/.copilot/config.json trustedFolders (hooks silently no-op without it)",
-        fix: `add "${projectDir}" to trustedFolders in ~/.copilot/config.json (or accept the CLI's interactive trust prompt)`,
-      });
+      if (!existsSync(configPath)) {
+        results.push({
+          pass: true,
+          label:
+            "~/.copilot/config.json absent — fine for VS Code-only installs; for the CLI, one interactive run records folder trust (hooks silently no-op untrusted)",
+        });
+      } else {
+        const raw = readFileSync(configPath, "utf-8").replace(/^\s*\/\/.*$/gm, "");
+        const trusted =
+          (JSON.parse(raw) as { trustedFolders?: string[] }).trustedFolders ?? [];
+        const norm = (p: string) => {
+          let out = p.replace(/[/\\]+$/, "");
+          try {
+            out = realpathSync(out);
+          } catch {
+            // keep the trimmed form — a recorded-but-deleted path never matches
+          }
+          return out;
+        };
+        const projectNorm = norm(projectDir);
+        results.push({
+          pass: trusted.some((t) => norm(t) === projectNorm),
+          label:
+            "project folder in ~/.copilot/config.json trustedFolders (CLI hooks silently no-op without it)",
+          fix: `add "${projectDir}" to trustedFolders in ~/.copilot/config.json (or accept the CLI's interactive trust prompt)`,
+        });
+      }
     } catch {
       results.push({
-        pass: false,
-        label: "could not read ~/.copilot/config.json to verify folder trust",
-        fix: "ensure ~/.copilot/config.json exists and lists this project in trustedFolders",
+        pass: true,
+        label:
+          "could not parse ~/.copilot/config.json to verify folder trust — verify trustedFolders manually (CLI hooks silently no-op untrusted)",
       });
     }
     // Headless reminder (advisory pass-with-label): -p/prompt-mode runs skip

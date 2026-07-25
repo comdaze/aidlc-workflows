@@ -262,6 +262,112 @@ describe("t249 Copilot hook adapter (live-captured payload fixtures)", () => {
     expect(r.stdout.trim()).toBe("");
   });
 
+  test("13: reviewer-scope forwarding blocks a sibling read via the ledger identity", () => {
+    const dir = scratchProject(true);
+    // 12a step-1 dispatch record: the architecture reviewer is scoped to U01.
+    const record = seededRecordDir(dir);
+    mkdirSync(record, { recursive: true });
+    writeFileSync(
+      join(record, ".aidlc-reviewer-dispatch.json"),
+      JSON.stringify({
+        reviewer: "aidlc-architecture-reviewer-agent",
+        stage: "functional-design",
+        unit: "U01",
+        exempt: [],
+      }),
+      "utf-8",
+    );
+    // SubagentStart brackets the delegation (camelCase, the live CLI quirk).
+    runAdapter(dir, "subagent-start", {
+      ...FIXTURES.subagentStart,
+      cwd: dir,
+      agentName: "aidlc-architecture-reviewer-agent",
+    });
+    // A sibling-unit read from inside the delegation: subagent-originated
+    // calls carry a toolu_* id as session_id (live-verified in the compat
+    // spike, T6b/T12). The ledger must resolve the identity and the core
+    // reviewer-scope hook must convert the block to the deny JSON.
+    const sibling = join(record, "construction", "U02", "functional-design", "design.md");
+    const r = runAdapter(dir, "pre-tool", {
+      hook_event_name: "PreToolUse",
+      session_id: "toolu_test0000000000000001",
+      cwd: dir,
+      tool_name: "Read",
+      tool_input: { path: sibling },
+    });
+    expect(r.code).toBe(0);
+    const parsed = JSON.parse(r.stdout) as {
+      hookSpecificOutput?: { permissionDecision?: string };
+    };
+    expect(parsed.hookSpecificOutput?.permissionDecision).toBe("deny");
+
+    // SubagentStop pops the ledger; the same call afterwards is ambiguous
+    // (no active entry) and fails open — the documented identity contract.
+    runAdapter(dir, "log-subagent", {
+      ...FIXTURES.subagentStop,
+      cwd: dir,
+      agent_name: "aidlc-architecture-reviewer-agent",
+    });
+    const after = runAdapter(dir, "pre-tool", {
+      hook_event_name: "PreToolUse",
+      session_id: "toolu_test0000000000000002",
+      cwd: dir,
+      tool_name: "Read",
+      tool_input: { path: sibling },
+    });
+    expect(after.code).toBe(0);
+    expect(after.stdout.trim()).toBe("");
+  });
+
+  test("14: IDE tool names normalize to the core contract (run_in_terminal guard deny)", () => {
+    const dir = scratchProject(true);
+    // VS Code's shell tool name with a blocked lifecycle command: the alias
+    // table must canonicalize run_in_terminal -> Bash so the guard fires.
+    const r = runAdapter(dir, "pre-tool", {
+      hook_event_name: "PreToolUse",
+      session_id: "11111111-2222-4333-8444-555555555555",
+      cwd: dir,
+      tool_name: "run_in_terminal",
+      tool_input: { command: "bun .aidlc/tools/aidlc-state.ts approve" },
+    });
+    expect(r.code).toBe(0);
+    const parsed = JSON.parse(r.stdout) as {
+      hookSpecificOutput?: { permissionDecision?: string };
+    };
+    expect(parsed.hookSpecificOutput?.permissionDecision).toBe("deny");
+  });
+
+  test("15: fresh-session source 'new' maps to startup (SESSION_STARTED lands)", () => {
+    const dir = scratchProject(true);
+    const r = runAdapter(dir, "session-start", withCwd(FIXTURES.sessionStart, dir));
+    expect(r.code).toBe(0);
+    // The live capture carries source: "new"; unmapped it emits NOTHING
+    // (review P1-2). The mapped forward must land the audit row.
+    expect(String(FIXTURES.sessionStart.source)).toBe("new");
+    expect(readAudit(dir)).toContain("SESSION_STARTED");
+  });
+
+  test("16: session reconcile emits inferred SESSION_ENDED on the current layout", () => {
+    const dir = scratchProject(true);
+    // Session A starts (writes the heartbeat), session B starts with a
+    // different id: the reconcile must emit the inferred SESSION_ENDED —
+    // on the aidlc/ workspace layout, NOT the extinct aidlc-docs/ root
+    // (review P1-3).
+    runAdapter(dir, "session-start", {
+      ...FIXTURES.sessionStart,
+      cwd: dir,
+      session_id: "aaaaaaaa-0000-4000-8000-000000000001",
+    });
+    const before = readAudit(dir);
+    expect(before).not.toContain("SESSION_ENDED");
+    runAdapter(dir, "session-start", {
+      ...FIXTURES.sessionStart,
+      cwd: dir,
+      session_id: "bbbbbbbb-0000-4000-8000-000000000002",
+    });
+    expect(readAudit(dir)).toContain("SESSION_ENDED");
+  });
+
   test("12: mint records HUMAN_TURN only when workflow state exists", () => {
     const withStateDir = scratchProject(true);
     runAdapter(withStateDir, "mint", withCwd(FIXTURES.userPromptSubmit, withStateDir));

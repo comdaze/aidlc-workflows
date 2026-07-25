@@ -32,7 +32,7 @@ This is the same AI-DLC core that ships to every harness — one deterministic e
 
 - **One install, two surfaces**: Copilot CLI and VS Code agent mode read the same \`.github/{skills,agents,hooks}\` tree and this AGENTS.md. Skills, personas, and hooks behave identically; anything surface-specific is called out below.
 - Approval gates and questions render as **numbered prose options** (no structured-question widget); the questions FILE with \`[Answer]:\` tags remains the source of truth.
-- Hooks ride the **AIDLC adapter** (\`.aidlc/hooks/aidlc-copilot-adapter.ts\`, wired by \`.github/hooks/aidlc.json\`): reviewer read-scope enforcement and the state-transition guard run before tools **and actually block** (PreToolUse deny is native on both surfaces); audit and sensors cover Write/Edit; runtime-compile, presence minting, and pre-compaction state validation run from the matching events.
+- Hooks ride the **AIDLC adapter** (\`.aidlc/hooks/aidlc-copilot-adapter.ts\`, wired by \`.github/hooks/aidlc.json\`): reviewer read-scope enforcement and the state-transition guard run before tools **and actually block** (PreToolUse deny is native; live-verified on the CLI, documented on VS Code); audit and sensors cover Write/Edit; runtime-compile, presence minting, and pre-compaction state validation run from the matching events.
 - The forwarding-loop enforcement (the Stop hook) **blocks natively** (\`decision: block\`) — same contract as Claude Code.
 - Reviewer identity on subagent tool calls is correlated from SubagentStart/SubagentStop (payloads carry no per-call agent field); with several subagents in flight the scope hook fails open for the ambiguous call and the prose §12a bound governs.
 - Session-end audit events fire from the CLI's SessionEnd; VS Code local chat never fires SessionEnd, so the adapter reconciles the prior session at the next SessionStart (inferred provenance).
@@ -44,7 +44,7 @@ This is the same AI-DLC core that ships to every harness — one deterministic e
 
     sections_after_resumption: `## Method include (do not remove)
 
-Both Copilot surfaces expand \`@\`-imports in this file; these lines pull the
+Copilot expands \`@\`-imports in this file (live-verified on the CLI); these lines pull the
 active space's method layers into ambient context (the native include —
 \`/aidlc space <name>\` re-points them in place):
 

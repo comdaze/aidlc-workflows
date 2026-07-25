@@ -60,11 +60,21 @@ function skipReason(): string | null {
     return `copilot >= 1.0.74 not found (AIDLC_COPILOT_BIN=${COPILOT_BIN})`;
   }
   if (!existsSync(COPILOT_DIST)) return `distributable missing: ${COPILOT_DIST}`;
-  // A provider must be reachable: BYOK env (no GitHub auth needed) or a
-  // logged-in CLI. BYOK is detectable; a GitHub login is probed by copilot
-  // itself at run time, so only the BYOK-less, auth-less case is unknowable
-  // here — the run then fails with copilot's own auth error, which the rc
-  // assert surfaces honestly.
+  // A provider must be reachable: BYOK env (no GitHub auth needed) or GitHub
+  // auth. BYOK and the documented token env vars are detectable; an
+  // interactive `copilot login` stores its state opaquely, so accept an
+  // explicit opt-through for that case (AIDLC_COPILOT_ASSUME_AUTH=1) instead
+  // of failing on copilot's auth error (the opencode twin's credential-probe
+  // pattern, adapted to what is knowable here).
+  if (
+    !process.env.COPILOT_PROVIDER_BASE_URL &&
+    !process.env.COPILOT_GITHUB_TOKEN &&
+    !process.env.GH_TOKEN &&
+    !process.env.GITHUB_TOKEN &&
+    process.env.AIDLC_COPILOT_ASSUME_AUTH !== "1"
+  ) {
+    return "no provider visible: set COPILOT_PROVIDER_BASE_URL (BYOK), a GitHub token env var, or AIDLC_COPILOT_ASSUME_AUTH=1 for an interactively logged-in CLI";
+  }
   return null;
 }
 const SKIP_REASON = skipReason();

@@ -87,12 +87,16 @@ git checkout v2
   below are called out explicitly.
 - **Questions render as numbered prose options** (no structured-question
   widget); the questions FILE with `[Answer]:` tags stays the source of truth.
-- **Hooks enforce natively on both surfaces.** The adapter
+- **Hooks enforce natively.** The adapter
   (`.aidlc/hooks/aidlc-copilot-adapter.ts`, wired by
   `.github/hooks/aidlc.json`) converts a core-guard block into Copilot's
   `permissionDecision: deny` — the reviewer read-scope bound and the
   state-transition guard actually refuse the tool call, and the Stop hook
   blocks with the same `decision: block` contract as Claude Code.
+  Live-verified on the CLI; on VS Code agent mode the same deny/block
+  channels are documented and the adapter normalizes the IDE's tool names,
+  but the IDE side has not yet been verified live — treat IDE enforcement
+  as best-effort until it has.
 - **Hook wiring is matcher-free by design**: VS Code parses but IGNORES hook
   matchers, so every adapter target self-filters on `tool_name` instead — a
   matcher would silently broaden on the IDE.
@@ -108,8 +112,10 @@ git checkout v2
 - **Session-end**: the CLI fires SessionEnd (piped through); VS Code local
   chat never fires it, so the adapter reconciles the prior session at the
   next SessionStart with inferred provenance (the codex pattern).
-- **The method include rides AGENTS.md `@`-imports** (both surfaces expand
-  them; live-verified). `/aidlc space <name>` re-points the block in place.
+- **The method include rides AGENTS.md `@`-imports** (live-verified on the
+  CLI; VS Code documents `@`-import expansion but it has not been verified
+  live there). `/aidlc space <name>` re-points the block in place, including
+  the `.github/agents/` persona twins.
 - **No statusline**; use `/aidlc --status` and the progress lines at gates.
 - **Construction swarm is subagent fan-out only** (`AIDLC_USE_SWARM=1` is a
   loud no-op).

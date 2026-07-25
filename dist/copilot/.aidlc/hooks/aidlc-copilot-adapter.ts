@@ -105,11 +105,64 @@ export async function run(
   const sessionId = copilot.session_id ?? copilot.sessionId ?? "";
   const subagentName = copilot.agent_name ?? copilot.agentName ?? "";
 
+  // Canonicalize the tool name across the two surfaces. The CLI sends
+  // Claude-style names (Bash/Write/Edit/Read — live-captured); VS Code agent
+  // mode uses its own snake_case execution ids (extracted from the shipped
+  // extension's equivalence sets — parser-verified, pending a live IDE run).
+  // Unknown names pass through unmapped and fall out of the self-filters,
+  // exactly like any foreign tool.
+  const TOOL_ALIAS: Record<string, string> = {
+    // shell
+    run_in_terminal: "Bash",
+    bash: "Bash",
+    local_shell: "Bash",
+    // writes/creates
+    create_file: "Write",
+    create_directory: "Write",
+    // edits
+    apply_patch: "Edit",
+    insert_edit_into_file: "Edit",
+    replace_string_in_file: "Edit",
+    multi_replace_string_in_file: "Edit",
+    edit_notebook_file: "Edit",
+    str_replace: "Edit",
+    str_replace_editor: "Edit",
+    // reads
+    read_file: "Read",
+    view: "Read",
+    // read-scope sweep surfaces (VS Code names → core matcher arms)
+    list_dir: "LS",
+    file_search: "Glob",
+    glob: "Glob",
+    grep_search: "Grep",
+    semantic_search: "Grep",
+  };
+  const toolName = (() => {
+    const raw = copilot.tool_name ?? "";
+    return TOOL_ALIAS[raw] ?? raw;
+  })();
+
+  // Re-serialize the payload with the canonical tool_name so verbatim pipes
+  // (Bash → guards, runtime-compile) carry the name the core hooks match on.
+  const canonicalInput = (() => {
+    if (!copilot.tool_name || copilot.tool_name === toolName) return input;
+    try {
+      const parsed = JSON.parse(input) as Record<string, unknown>;
+      parsed.tool_name = toolName;
+      return JSON.stringify(parsed);
+    } catch {
+      return input;
+    }
+  })();
+
+  // Machine-local per-user runtime state, beside the P8 session map — NOT the
+  // per-intent health dir (the heartbeat outlives intents) and NOT the extinct
+  // flat aidlc-docs/ root (the codex adapter's stale path — review P1-3).
   const heartbeatFile = join(
     projectDir,
-    "aidlc-docs",
-    ".aidlc-hooks-health",
-    "copilot-session.json",
+    "aidlc",
+    ".aidlc-sessions",
+    "copilot-heartbeat.json",
   );
 
   // --- Core-hook subprocess plumbing -----------------------------------------
@@ -219,9 +272,15 @@ export async function run(
   switch (target) {
     case "session-start": {
       reconcilePriorSession();
+      // Copilot delivers source "new" for a fresh session (live-captured);
+      // the core hook's emission map knows startup|clear|resume|compact —
+      // forward "new" as "startup" so SESSION_STARTED and the per-session
+      // intent stamp (P8 rebind) fire. Other values pass through (resume is
+      // shared vocabulary).
+      const rawSource = copilot.source ?? "startup";
       const fwd = JSON.stringify({
         hook_event_name: "SessionStart",
-        source: copilot.source ?? "startup",
+        source: rawSource === "new" ? "startup" : rawSource,
         ...(sessionId ? { session_id: sessionId } : {}),
       });
       const r = runCore("aidlc-session-start.ts", fwd);
@@ -261,27 +320,41 @@ export async function run(
       // ONE registration serves both guards (matcher-free wiring): the
       // state-transition guard first, then reviewer-scope. Either block
       // converts to the deny JSON (difference #4).
-      const tool = copilot.tool_name ?? "";
-      if (tool === "Bash") {
-        const guard = runCoreWithStderr("aidlc-state-transition-guard.ts", input);
+      if (toolName === "Bash") {
+        const guard = runCoreWithStderr("aidlc-state-transition-guard.ts", canonicalInput);
         if (guard.code === 2) {
           process.stdout.write(denyJson(guard.stderr));
           return 0;
         }
-        const scope = runCoreWithStderr("aidlc-reviewer-scope.ts", withAgentType(input));
+        const scope = runCoreWithStderr(
+          "aidlc-reviewer-scope.ts",
+          withAgentType(canonicalInput),
+        );
         if (scope.code === 2) {
           process.stdout.write(denyJson(scope.stderr));
           return 0;
         }
         return 0;
       }
-      if (tool === "Write" || tool === "Edit" || tool === "Read") {
+      // The full read/edit sweep surface the core matcher enforces on Claude
+      // (Read|Edit|Write plus LS/Glob/Grep — the sibling-sweep evasions).
+      if (["Write", "Edit", "Read", "LS", "Glob", "Grep"].includes(toolName)) {
+        const ti = copilot.tool_input ?? {};
         const filePath = filePathOf(copilot.tool_input);
-        if (filePath) {
+        // Path-shaped tools re-key `path` → `file_path`; the search tools
+        // (LS/Glob/Grep) keep their native fields, which the core matcher
+        // reads directly (path/pattern/glob).
+        const toolInput: Record<string, unknown> =
+          toolName === "LS" || toolName === "Glob" || toolName === "Grep"
+            ? { ...ti, ...(filePath ? { path: filePath } : {}) }
+            : filePath
+              ? { file_path: filePath }
+              : {};
+        if (Object.keys(toolInput).length > 0) {
           const fwd = JSON.stringify({
             hook_event_name: "PreToolUse",
-            tool_name: tool,
-            tool_input: { file_path: filePath },
+            tool_name: toolName,
+            tool_input: toolInput,
             ...(activeSubagentType() ? { agent_type: activeSubagentType() } : {}),
           });
           const r = runCoreWithStderr("aidlc-reviewer-scope.ts", fwd);
@@ -297,13 +370,12 @@ export async function run(
     case "post-tool": {
       // Matcher-free registration: self-filter on tool_name (the IDE ignores
       // matchers — difference in the wiring header). Advisory targets only.
-      const tool = copilot.tool_name ?? "";
-      if (tool === "Write" || tool === "Edit") {
+      if (toolName === "Write" || toolName === "Edit") {
         const filePath = filePathOf(copilot.tool_input);
         if (filePath) {
           const fwd = JSON.stringify({
             hook_event_name: "PostToolUse",
-            tool_name: tool,
+            tool_name: toolName,
             tool_input: { file_path: filePath },
           });
           runCore("aidlc-audit-logger.ts", fwd);
@@ -311,10 +383,10 @@ export async function run(
         }
         return 0;
       }
-      if (tool === "Bash") {
-        // Copilot already names the shell tool "Bash" with tool_input.command
-        // — the core hook's exact contract. Verbatim pipe.
-        runCore("aidlc-runtime-compile.ts", input);
+      if (toolName === "Bash") {
+        // The shell tool with tool_input.command — the core hook's exact
+        // contract (canonicalized name for the IDE's run_in_terminal).
+        runCore("aidlc-runtime-compile.ts", canonicalInput);
       }
       return 0;
     }
@@ -386,7 +458,9 @@ export async function run(
   // session-start that finds a DIFFERENT prior session emits the inferred
   // SESSION_ENDED through the byte-shared core hook.
   function reconcilePriorSession(): void {
-    if (!existsSync(join(projectDir, "aidlc-docs"))) return;
+    // Only meaningful once the workspace shell exists (the aidlc/ root ships
+    // with the install and is scaffolded on first /aidlc).
+    if (!existsSync(join(projectDir, "aidlc"))) return;
     try {
       if (existsSync(heartbeatFile)) {
         const prior = JSON.parse(readFileSync(heartbeatFile, "utf-8")) as {

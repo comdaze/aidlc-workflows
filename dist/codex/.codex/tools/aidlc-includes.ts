@@ -238,12 +238,23 @@ export function repointHarnessIncludes(projectDir: string, space?: string): stri
       }
     }
     // Inline and native persona bodies carry explicit method paths for
-    // on-demand reads. Keep both aligned with the active-space cursor.
-    for (const relDir of [join(".aidlc", "agents"), join(".opencode", "agents")]) {
+    // on-demand reads. Keep every surface aligned with the active-space
+    // cursor: the inline twins (.aidlc/agents), opencode's native subagents
+    // (.opencode/agents), and Copilot's native custom agents
+    // (.github/agents — the copies dispatched delegations actually load).
+    for (const relDir of [
+      join(".aidlc", "agents"),
+      join(".opencode", "agents"),
+      join(".github", "agents"),
+    ]) {
       const agentsDir = join(projectDir, relDir);
       if (!existsSync(agentsDir)) continue;
+      // .github/ is SHARED with user content on the Copilot harness — touch
+      // only the aidlc-named persona files there (the other dirs are
+      // AIDLC-owned, where the prefix filter is a no-op: every shipped
+      // persona is aidlc-*.md).
       for (const name of readdirSync(agentsDir).sort()) {
-        if (!name.endsWith(".md")) continue;
+        if (!name.endsWith(".md") || !name.startsWith("aidlc-")) continue;
         const p = join(agentsDir, name);
         const raw = readSafe(p);
         if (raw === null) continue;

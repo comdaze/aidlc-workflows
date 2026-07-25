@@ -77,7 +77,9 @@ function emitAgentMd(raw: string, srcPath: string): string {
     throw new Error(`${srcPath}: agent frontmatter has no tier: line.`);
   }
   const disallowedMatch = fm.match(/^disallowedTools:\s*(.*?)\s*$/m);
-  if (disallowedMatch && !/\bTask\b/i.test(disallowedMatch[1])) {
+  // Exactly `Task` — a multi-valued list (e.g. "Task, WebSearch") must fail
+  // the build, not silently ship the extra denial unenforced.
+  if (disallowedMatch && !/^task$/i.test(disallowedMatch[1].trim())) {
     throw new Error(
       `${srcPath}: copilot emission cannot project disallowedTools: ${disallowedMatch[1]}.`,
     );
@@ -126,6 +128,24 @@ export default function emit(ctx: EmitContext): void {
   }
 
   const emissions: Array<{ path: string; content: () => string }> = [];
+
+  // The packager rendered AGENTS.md (onboarding) before emit runs; its
+  // skeleton names skills under <harnessDir>/skills/, but Copilot discovers
+  // skills ONLY at .github/skills/. Rewrite the path family in place (the
+  // codex idiom: its prose rewrite maps the same skeleton lines onto
+  // .agents/skills/). Anchored on the slash-suffixed form — the one
+  // permitted transform class.
+  const agentsMdPath = join(distRoot, "AGENTS.md");
+  if (existsSync(agentsMdPath)) {
+    emissions.push({
+      path: agentsMdPath,
+      content: () =>
+        readFileSync(agentsMdPath, "utf-8").replaceAll(
+          `${harnessDir}/skills/`,
+          ".github/skills/",
+        ),
+    });
+  }
 
   // Hook wiring.
   emissions.push({
