@@ -1,7 +1,7 @@
 # Porting AI-DLC to a New Harness
 
 AI-DLC ships from **one core, many harnesses** — today Claude Code, Kiro CLI, Kiro IDE,
-Codex CLI, and opencode, and the set is open. The hand-authored source is a
+Codex CLI, opencode, and GitHub Copilot, and the set is open. The hand-authored source is a
 harness-neutral `core/` plus a thin `harness/<name>/` surface per CLI; the
 packager (`scripts/package.ts`) regenerates each committed `dist/<harness>/`
 tree. Adding another harness is **one directory and one manifest row** — the
@@ -22,6 +22,8 @@ harness/
   claude/  manifest.ts · skills/aidlc/ · CLAUDE.md · settings.json
   kiro/    manifest.ts · skills/aidlc/ · agents/*.json · hooks/aidlc-kiro-adapter.ts · settings/cli.json · AGENTS.md
   codex/   manifest.ts · emit.ts · skills/aidlc/ · hooks/aidlc-codex-adapter.ts
+  opencode/ manifest.ts · emit.ts · skills/aidlc/ · command/ · plugin/
+  copilot/ manifest.ts · emit.ts · skills/aidlc/ · hooks/aidlc-copilot-adapter.ts
 scripts/
   package.ts               # bun scripts/package.ts [<name>] [--check]
   manifest-types.ts        # the HarnessManifest contract every manifest implements

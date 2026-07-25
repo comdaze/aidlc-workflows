@@ -173,16 +173,16 @@ export default function emit(ctx: EmitContext): void {
       content: () => gen.renderRunner(scope, scopes[scope].description),
     });
   }
-  // (d) session skills — byte-copy from the projected engine tree (already
-  // token-substituted by the packager's core projection).
+  // (d) session skills — copied from core/ with token substitution (the
+  // engine dir ships NO skills/ — Copilot never scans it).
   for (const skill of ["aidlc-session-cost", "aidlc-replay", "aidlc-outcomes-pack"]) {
-    const srcDir = join(distRoot, harnessDir, "skills", skill);
+    const srcDir = join(coreRoot, "skills", skill);
     if (!existsSync(srcDir)) continue;
     for (const file of walk(srcDir)) {
       const rel = relative(srcDir, file);
       emissions.push({
         path: join(SKILLS_DST, skill, rel),
-        content: () => readFileSync(file, "utf-8"),
+        content: () => substituteToken(readFileSync(file, "utf-8")),
       });
     }
   }

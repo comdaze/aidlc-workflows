@@ -42,7 +42,20 @@ This is the same AI-DLC core that ships to every harness — one deterministic e
 - A workflow's \`aidlc/\` workspace tree is harness-neutral: a project can move between harness installs (supported but untested — keep the trees in sync via the framework's packaging if you do this).
 `,
 
-    sections_after_resumption: "",
+    sections_after_resumption: `## Method include (do not remove)
+
+Both Copilot surfaces expand \`@\`-imports in this file; these lines pull the
+active space's method layers into ambient context (the native include —
+\`/aidlc space <name>\` re-points them in place):
+
+@aidlc/spaces/default/memory/org.md
+@aidlc/spaces/default/memory/team.md
+@aidlc/spaces/default/memory/project.md
+@aidlc/spaces/default/memory/phases/ideation.md
+@aidlc/spaces/default/memory/phases/inception.md
+@aidlc/spaces/default/memory/phases/construction.md
+@aidlc/spaces/default/memory/phases/operation.md
+`,
 
     gitignore_extra: "",
   },

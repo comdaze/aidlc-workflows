@@ -54,11 +54,9 @@ const manifest: HarnessManifest = {
     { src: "scopes", dst: "scopes" },
     { src: "agents", dst: "agents" },
     { src: "hooks", dst: "hooks" },
-    // Session skills project into the engine dir for the emit step to
-    // compose into .github/skills/ (Copilot does not scan .aidlc/skills/).
-    { src: "skills/aidlc-session-cost", dst: "skills/aidlc-session-cost" },
-    { src: "skills/aidlc-replay", dst: "skills/aidlc-replay" },
-    { src: "skills/aidlc-outcomes-pack", dst: "skills/aidlc-outcomes-pack" },
+    // NO skills/ inside the engine dir: Copilot discovers project skills at
+    // .github/skills/ only, so emit composes the whole skill set there
+    // (orchestrator + runners + session skills) from core — the codex idiom.
   ],
 
   harnessFiles: [

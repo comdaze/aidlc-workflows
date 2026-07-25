@@ -252,8 +252,8 @@ sequenceDiagram
 ## Source vs distribution (one core, many harnesses)
 
 The framework is **authored once and generated per harness** — today Claude
-Code, Kiro CLI, Kiro IDE, Codex CLI, and opencode, and any capable CLI you port
-it to. The
+Code, Kiro CLI, Kiro IDE, Codex CLI, opencode, and GitHub Copilot, and any
+capable CLI you port it to. The
 hand-authored source is a harness-neutral `core/` plus a thin `harness/<name>/`
 surface per CLI; `bun scripts/package.ts` regenerates the committed,
 drift-guarded `dist/<harness>/` trees:
@@ -271,7 +271,8 @@ scripts/build-binaries.ts # release-only binary compiler + smoke gate, writing
                        #   per-target executable + runtime/<harness>/ bundles
                        #   under ignored build/binaries/
 dist/<harness>/        # GENERATED + committed: claude/.claude, kiro/.kiro,
-                       #   kiro-ide/.kiro, codex/{.codex,.agents} — never hand-edited
+                       #   kiro-ide/.kiro, codex/{.codex,.agents},
+                       #   opencode/{.aidlc,.opencode}, copilot/{.aidlc,.github} — never hand-edited
 ```
 
 `core/` `.ts` is byte-copied untransformed; the runtime `harnessDir()` seam
@@ -434,7 +435,8 @@ and `memoryDirFor` (`aidlc-graph.ts:234`) — all default their space argument t
 `activeSpace(projectDir)`, so AI-DLC's own resolvers follow the cursor; switching
 spaces with `/aidlc space <name>` also
 re-points each harness-native rule include (the Claude `@`-import stub described
-above, Kiro's resources glob, Codex's rules dir) at the switched space's
+above, Kiro's resources glob, Codex's rules dir, opencode's `instructions` glob,
+Copilot's `AGENTS.md` `@`-imports) at the switched space's
 `memory/`. At `default` the re-point is a byte-identical no-op, so a single-team
 committed tree never churns.
 

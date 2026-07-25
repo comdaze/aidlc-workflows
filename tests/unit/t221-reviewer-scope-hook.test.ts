@@ -598,6 +598,27 @@ describe("t221 (c) harness registration and protocol prose", () => {
     }
   });
 
+  test("Copilot .github/hooks/aidlc.json wires the adapter's pre-tool target on PreToolUse", () => {
+    const harnesses = HARNESS_MATRIX.filter(
+      (harness) => harness.capabilities.reviewerScopeRegistration === "copilot-hooks",
+    );
+    expect(harnesses.length).toBeGreaterThan(0);
+    for (const harness of harnesses) {
+      const wiring = JSON.parse(
+        readFileSync(join(harness.distRoot, ".github", "hooks", "aidlc.json"), "utf-8"),
+      ) as { hooks: Record<string, Array<{ bash?: string; matcher?: string }>> };
+      const pre = wiring.hooks.PreToolUse ?? [];
+      // ONE matcher-free pre-tool registration serves both guards (the
+      // adapter runs state-transition-guard then reviewer-scope): VS Code
+      // parses but IGNORES matchers, so the target self-filters instead.
+      expect(
+        pre.some((h) => (h.bash ?? "").endsWith("aidlc-copilot-adapter.ts pre-tool")),
+        harness.name,
+      ).toBe(true);
+      for (const h of pre) expect(h.matcher, harness.name).toBeUndefined();
+    }
+  });
+
   test("Codex hooks.json wires the adapter's reviewer-scope target on PreToolUse", () => {
     const harnesses = HARNESS_MATRIX.filter(
       (harness) => harness.capabilities.reviewerScopeRegistration === "codex-hooks",

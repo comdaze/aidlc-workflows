@@ -205,8 +205,19 @@ export function repointHarnessIncludes(projectDir: string, space?: string): stri
   }
 
   if (harness === ".aidlc") {
-    // opencode (engine dir .aidlc): opencode reads the project-root
-    // opencode.json/jsonc, whose `instructions` glob is the method include.
+    // Two harnesses ship the .aidlc engine dir; both include surfaces are
+    // probed (each rewriter no-ops when its surface carries no method
+    // pointer, so the branches compose without a flavor probe).
+    // Copilot: the project-root AGENTS.md's @-import lines are the method
+    // include (both Copilot surfaces expand @-imports; live-verified).
+    const agentsMdPath = join(projectDir, "AGENTS.md");
+    if (existsSync(agentsMdPath)) {
+      const raw = readSafe(agentsMdPath);
+      if (raw !== null) {
+        repointFile(agentsMdPath, "AGENTS.md", raw, sp, repointClaudeStub, written);
+      }
+    }
+    // opencode: the project-root opencode.json/jsonc `instructions` glob.
     const jsonPath = join(projectDir, "opencode.json");
     const jsoncPath = join(projectDir, "opencode.jsonc");
     for (const [configPath, relPath] of [

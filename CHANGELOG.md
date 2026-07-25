@@ -1,6 +1,18 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [2.5.12] - 2026-07-25
+
+New harness: **GitHub Copilot** — one `dist/copilot/` install serves BOTH the Copilot CLI (>= 1.0.74) and VS Code agent mode (>= 1.130), which read the same `.github/{skills,agents,hooks}` tree and root `AGENTS.md`. Hooks enforce natively on both surfaces (blocking PreToolUse deny + blocking Stop). **Install:** copy `dist/copilot/.aidlc/`, `dist/copilot/aidlc/`, and merge `dist/copilot/.github/` + `AGENTS.md` into your project, then trust the folder (`trustedFolders` in `~/.copilot/config.json`); headless `copilot -p` runs additionally need `GITHUB_COPILOT_PROMPT_MODE_REPO_HOOKS=1` — hooks silently no-op without both (`/aidlc --doctor` checks).
+
+* `/aidlc` runs on Copilot via `.github/skills/aidlc/` (slash-invocable on both surfaces); per-stage and scope runners ship as `.github/skills/aidlc-<slug>/`.
+* The 14 personas ship as native custom agents (`.github/agents/aidlc-*-agent.md`) with no `model:` pin — agents inherit the session model on both surfaces (the two disagree on model-value syntax; a pinned IDE display name is a hard 400 on the CLI under BYOK).
+* Reviewer read-scope and the state-transition guard BLOCK on Copilot (`permissionDecision: deny`), and the forwarding-loop Stop hook blocks with the Claude-shaped `decision: block` contract — the first harness besides Claude Code with both channels enforcing.
+* `/aidlc --doctor` gains a Copilot arm: engine + `.github` wiring presence, CLI version floor 1.0.74, folder-trust check, and the headless env-var reminder.
+* `/aidlc space <name>` re-points the method include on this harness by rewriting the `@aidlc/spaces/<space>/memory/...` import lines in the project-root `AGENTS.md`.
+* BYOK note: with `COPILOT_PROVIDER_TYPE=anthropic` against Amazon Bedrock's Anthropic-compatible endpoint, set `COPILOT_MODEL` to a Copilot-catalog name and carry the Bedrock model id in `COPILOT_PROVIDER_WIRE_MODEL`.
+* New tests: `t248-copilot-packaging`, `t249-copilot-adapter` (deterministic), and the `AIDLC_COPILOT_EXEC_LIVE=1`-gated `t-exec-copilot-status` live journey.
+
 ## [2.5.11] - 2026-07-24
 
 Intent Capture now keeps generated intent and stakeholder claims grounded in the user's description, confirmed answers, workflow-selected scope, or explicitly registered memory. Unsupported content is omitted, elicited, or surfaced as a human-owned assumption instead of being presented as fact. **Upgrade:** re-copy your `dist/<harness>/` shell into the project so the updated stage, Product Lead reviewer contract, and `claim-sources` sensor are installed.
