@@ -82,7 +82,7 @@ function pluginNameFromRoot(): string {
   if (!PLUGIN_ROOT) return "plugin";
   const fromContent = firstPluginFieldInPlugin();
   if (fromContent) return fromContent;
-  for (const md of [".claude-plugin", ".codex-plugin", ".kiro-plugin"]) {
+  for (const md of [".claude-plugin", ".codex-plugin", ".plugin", ".kiro-plugin"]) {
     try {
       const m = JSON.parse(readFileSync(join(PLUGIN_ROOT, md, "plugin.json"), "utf-8"));
       if (typeof m?.name === "string" && m.name) return m.name;

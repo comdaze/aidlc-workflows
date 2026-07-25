@@ -19,7 +19,8 @@
 //   (4) The emitted persona twins carry NO model:/tier: keys (the two
 //       Copilot surfaces disagree on model-value syntax — live-verified 400
 //       on the CLI with an IDE display name — so agents must inherit the
-//       session model) and project the core Task denial to `agents: []`.
+//       session model) and project the core Task denial to a supported tools
+//       allowlist that excludes Copilot's `agent` delegation tool.
 //
 // WHY SUBPROCESS for (1). Same idiom as t141/t150/t240: the packager is a
 // CLI; we pin its observable behavior, not its internals.
@@ -35,6 +36,7 @@ const CLAUDE_SRC = join(REPO_ROOT, "dist", "claude", ".claude");
 const COPILOT_ROOT = join(REPO_ROOT, "dist", "copilot");
 const ENGINE = join(COPILOT_ROOT, ".aidlc");
 const SHELL = join(COPILOT_ROOT, ".github");
+const WORKER_TOOLS_LINE = 'tools: ["read", "edit", "search", "execute", "web", "todo"]';
 
 function* walk(dir: string): Generator<string> {
   for (const entry of readdirSync(dir).sort()) {
@@ -104,7 +106,7 @@ describe("t248 dist/copilot packaging parity + shell shape", () => {
     }
   });
 
-  test("4: persona twins carry no model/tier keys and project Task denial to agents: []", () => {
+  test("4: persona twins carry no model/tier keys and exclude the agent delegation tool", () => {
     const agentsDir = join(SHELL, "agents");
     const files = readdirSync(agentsDir).filter((f) => f.endsWith(".md"));
     expect(files.length).toBe(14);
@@ -114,11 +116,12 @@ describe("t248 dist/copilot packaging parity + shell shape", () => {
       expect(fm).not.toMatch(/^model:/m);
       expect(fm).not.toMatch(/^tier:/m);
       expect(fm).not.toMatch(/^disallowedTools:/m);
+      expect(fm).not.toMatch(/^agents:/m);
       // The core source declares the Task denial on every current persona;
-      // its projected form is the native subagent allowlist.
+      // its projected form is Copilot's supported built-in tool allowlist.
       const coreSrc = readFileSync(join(REPO_ROOT, "core", "agents", f), "utf-8");
       if (/^disallowedTools:/m.test(coreSrc)) {
-        expect(fm).toMatch(/^agents: \[\]$/m);
+        expect(fm.split("\n")).toContain(WORKER_TOOLS_LINE);
       }
       // Body prose points at the engine dir, never an unsubstituted token.
       expect(raw).not.toContain("{{HARNESS_DIR}}");

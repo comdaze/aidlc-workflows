@@ -78,10 +78,9 @@ const manifest: HarnessManifest = {
 
   emit,
 
-  // ".aidlc-plugin" (the harnessDir-derived default) would collide with the
-  // opencode projection (same harnessDir); name the manifest dir for the
-  // harness, not the engine dir.
-  plugin: { manifestDir: ".copilot-plugin", kind: "store" },
+  // Copilot recognizes .plugin/plugin.json as a native plugin manifest.
+  // The harnessDir-derived ".aidlc-plugin" default is not a discovery path.
+  plugin: { manifestDir: ".plugin", kind: "store" },
 };
 
 export default manifest;

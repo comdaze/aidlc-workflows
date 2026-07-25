@@ -92,7 +92,7 @@ const HARNESS_CAPABILITIES = {
     skillsRoot: ".github/skills",
     plugin: {
       kind: "store",
-      manifestDir: ".copilot-plugin",
+      manifestDir: ".plugin",
       wiringFile: "hooks/hooks.json",
     },
     memoryInclude: "copilot-agents-md",

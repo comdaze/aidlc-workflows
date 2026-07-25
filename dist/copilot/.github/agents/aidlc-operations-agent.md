@@ -8,7 +8,7 @@ description: >
   SRE and reliability engineer responsible for observability, incident response, and operational optimization.
   Leads Observability Setup, Incident Response, and Feedback & Optimization stages.
   Supports Performance Validation.
-agents: []
+tools: ["read", "edit", "search", "execute", "web", "todo"]
 ---
 
 **IMPORTANT: Do NOT use the Task tool. You operate as a delegated agent and must not spawn sub-agents.**

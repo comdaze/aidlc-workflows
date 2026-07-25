@@ -91,7 +91,7 @@ The orchestration engine emits seven kinds today: `run-stage`, `invoke-swarm`, `
 - **Two surfaces, one install.** This same tree runs on Copilot CLI (`copilot`) and VS Code agent mode. Invoke with `/aidlc` (the skill's slash form) or by describing the work; on the CLI, `copilot -p "/aidlc ..."` drives it headless.
 - **State sync is conductor-owned here.** Keep the built-in todo list current per stage for visibility (the stage protocol's TaskUpdate steps map onto it); state-file sync rides the state tools dispatched by the engine's `report`, never a todo hook.
 - **Stage visibility**: there is no statusline. Surface position with the Part 4 progress line after every gate, and `/aidlc --status` on demand.
-- **Subagent delegation**: personas ship as native Copilot custom agents (`.github/agents/aidlc-*-agent.md`); delegate by invoking the named agent. Their `.aidlc/agents/` twins provide inline persona framing. Worker agents carry `agents: []` and cannot delegate (no nested delegation).
+- **Subagent delegation**: personas ship as native Copilot custom agents (`.github/agents/aidlc-*-agent.md`); delegate by invoking the named agent. Their `.aidlc/agents/` twins provide inline persona framing. Worker agents carry a supported `tools:` allowlist that omits Copilot's `agent` delegation tool and therefore cannot delegate (no nested delegation). Copilot has no all-except-agent form, so delegated workers also do not inherit arbitrary MCP tools.
 - **Hooks require trust**: repo hooks fire only when the project folder is trusted (`trustedFolders` in `~/.copilot/config.json`); headless `-p` runs additionally need `GITHUB_COPILOT_PROMPT_MODE_REPO_HOOKS=1`. `/aidlc --doctor` checks both. Untrusted = every hook silently absent, including the gates' presence mint.
 - **Headless caveat**: hooks enforce on both surfaces (PreToolUse deny + Stop block are native), but a `copilot -p` run without the env var above runs hookless; prefer interactive sessions for gated workflows.
 
@@ -217,4 +217,4 @@ The engine reads the compiled `data/stage-graph.json` directly for all routing; 
 - **Tri-mode interaction**: The user chooses guided, self-guided, or chat mode for answering questions.
 - **Audit trail**: All transitions are tool-owned and logged automatically.
 - **Self-learning guardrails**: Human corrections become persistent practices in `aidlc/spaces/<space>/memory/{team,project}.md` via the §13 learnings ritual.
-- **No nested delegation**: The conductor orchestrates all agent invocations. Worker agents carry `agents: []` in their frontmatter and cannot delegate.
+- **No nested delegation**: The conductor orchestrates all agent invocations. Worker agents carry a `tools:` allowlist without Copilot's `agent` tool and cannot delegate.

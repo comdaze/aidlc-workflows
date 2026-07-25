@@ -289,9 +289,10 @@ One install serves both surfaces: the standalone Copilot CLI and VS Code agent m
 **2. Set up your project**
 
 ```bash
-cp -r dist/copilot/.aidlc/   your-project/.aidlc/    # the AIDLC engine (neither surface scans it)
-cp -r dist/copilot/aidlc/    your-project/aidlc/     # the workspace shell - a sibling of .aidlc/, not inside it
-cp -r dist/copilot/.github/. your-project/.github/   # MERGE - everything aidlc-prefixed
+mkdir -p your-project/.aidlc your-project/aidlc your-project/.github
+cp -R dist/copilot/.aidlc/.  your-project/.aidlc/    # the AIDLC engine (neither surface scans it)
+cp -R dist/copilot/aidlc/.   your-project/aidlc/     # the workspace shell - a sibling of .aidlc/, not inside it
+cp -R dist/copilot/.github/. your-project/.github/   # MERGE - everything aidlc-prefixed
 cp dist/copilot/AGENTS.md    your-project/AGENTS.md  # or merge; keep the @-import block
 ```
 

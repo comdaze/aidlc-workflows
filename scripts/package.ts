@@ -870,7 +870,7 @@ function buildPluginProjection(pluginName: string, harnessName: string, outDir: 
   if (existsSync(outDir)) rmSync(outDir, { recursive: true, force: true });
   mkdirSync(outDir, { recursive: true });
 
-  // 1. Host-native manifest (.claude-plugin / .codex-plugin / .kiro-plugin).
+  // 1. Host-native manifest (for example .claude-plugin / .plugin / .kiro-plugin).
   const hostManifestDir = join(outDir, manifestDir);
   mkdirSync(hostManifestDir, { recursive: true });
   writeFileSync(

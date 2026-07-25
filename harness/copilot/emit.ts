@@ -10,10 +10,10 @@
 //     parses but IGNORES matchers, so every adapter target self-filters).
 //   - .github/agents/aidlc-*-agent.md — the 14 personas as native Copilot
 //     custom agents: NO model key (tierFlavor copilot is model-omitted by
-//     type — the two surfaces disagree on model: value syntax), NO tools key
-//     (omitted = all tools, the Claude default), the core Task denial
-//     projected to `agents: []` (the subagent allowlist — the native
-//     no-delegation dial; unknown-field-tolerant on both surfaces).
+//     type — the two surfaces disagree on model: value syntax), and the core
+//     Task denial projected to a supported `tools:` allowlist that omits
+//     Copilot's `agent` delegation tool. Copilot has no all-except-agent form,
+//     so worker agents intentionally do not inherit arbitrary MCP tools.
 //   - .github/skills/ — the COMPLETE skill tree (orchestrator + generated
 //     stage/scope runners + session skills): Copilot discovers project
 //     skills at .github/skills/, never inside .aidlc/, so the manifest sets
@@ -65,9 +65,12 @@ function emitHooksJson(harnessDir: string): string {
 // Rewrite a core persona .md into its Copilot-native custom-agent twin.
 // The frontmatter `tier:` line is DROPPED (copilot projection is model-
 // omitted by type — agents inherit the session model on both surfaces), and
-// the core `disallowedTools: Task` denial becomes `agents: []` (the native
-// subagent allowlist). An unknown disallowedTools value fails the build
-// instead of silently shipping an unenforced denial.
+// the core `disallowedTools: Task` denial becomes a supported `tools:`
+// allowlist without Copilot's `agent` delegation tool. An unknown
+// disallowedTools value fails the build instead of silently shipping an
+// unenforced denial.
+const COPILOT_WORKER_TOOLS = ["read", "edit", "search", "execute", "web", "todo"] as const;
+
 function emitAgentMd(raw: string, srcPath: string): string {
   if (raw.charCodeAt(0) === 0xfeff) raw = raw.slice(1);
   const m = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/);
@@ -88,7 +91,9 @@ function emitAgentMd(raw: string, srcPath: string): string {
     .split(/\r?\n/)
     .flatMap((line) => {
       if (/^tier:/.test(line)) return [];
-      if (/^disallowedTools:/.test(line)) return ["agents: []"];
+      if (/^disallowedTools:/.test(line)) {
+        return [`tools: [${COPILOT_WORKER_TOOLS.map((tool) => `"${tool}"`).join(", ")}]`];
+      }
       return [line];
     })
     .join("\n");

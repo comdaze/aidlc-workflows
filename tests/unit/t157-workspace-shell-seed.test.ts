@@ -232,6 +232,9 @@ describe("t157 seeded workspace shell + re-rooted .gitignore (SEED)", () => {
       expect(lines, `${h}: ignores per-intent runtime-graph.json`).toContain(
         "aidlc/spaces/*/intents/*/runtime-graph.json",
       );
+      expect(lines, `${h}: ignores pre-intent .aidlc-*`).toContain(
+        "aidlc/spaces/*/intents/.aidlc-*",
+      );
       expect(lines, `${h}: ignores per-intent .aidlc-*`).toContain(
         "aidlc/spaces/*/intents/*/.aidlc-*",
       );

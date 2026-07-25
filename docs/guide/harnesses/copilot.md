@@ -63,9 +63,10 @@ git checkout v2
 1. Copy the distribution into your project:
 
    ```bash
-   cp -r dist/copilot/.aidlc/   your-project/.aidlc/
-   cp -r dist/copilot/aidlc/    your-project/aidlc/    # the workspace shell — a sibling of .aidlc/, not inside it
-   cp -r dist/copilot/.github/. your-project/.github/  # MERGE — everything is aidlc-prefixed, nothing of yours is overwritten
+   mkdir -p your-project/.aidlc your-project/aidlc your-project/.github
+   cp -R dist/copilot/.aidlc/.  your-project/.aidlc/
+   cp -R dist/copilot/aidlc/.   your-project/aidlc/    # the workspace shell — a sibling of .aidlc/, not inside it
+   cp -R dist/copilot/.github/. your-project/.github/  # MERGE — everything is aidlc-prefixed, nothing of yours is overwritten
    cp dist/copilot/AGENTS.md    your-project/AGENTS.md # or merge into yours — keep the @-import block (the method include)
    ```
 
@@ -109,6 +110,10 @@ git checkout v2
   value syntax (the CLI forwards frontmatter strings verbatim to the BYOK
   provider; an IDE display name 400s there). Agents inherit the session
   model — tier projection on this harness is model-omitted by type.
+- **Worker personas use an explicit built-in `tools:` allowlist.** It omits
+  Copilot's `agent` delegation tool to enforce no nested delegation. Copilot
+  has no all-except-agent form, so delegated workers do not inherit arbitrary
+  MCP tools.
 - **Session-end**: the CLI fires SessionEnd (piped through); VS Code local
   chat never fires it, so the adapter reconciles the prior session at the
   next SessionStart with inferred provenance (the codex pattern).
@@ -120,7 +125,8 @@ git checkout v2
 - **Construction swarm is subagent fan-out only** (`AIDLC_USE_SWARM=1` is a
   loud no-op).
 - **MCP**: none ships. If you add servers, note the surfaces diverge here —
-  the CLI reads `~/.copilot/mcp-config.json`, VS Code reads `.vscode/mcp.json`.
+  the CLI reads `~/.copilot/mcp-config.json`, VS Code reads `.vscode/mcp.json`;
+  the conductor can use them, but delegated worker personas cannot.
 
 ## Verify
 
