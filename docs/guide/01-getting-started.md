@@ -136,8 +136,9 @@ Missing credentials are not blocking. A server you have no credentials for — n
 AI-DLC installs by copying its distribution for your harness into your project.
 The steps below cover **Claude Code** (the `dist/claude/.claude/` tree). For the
 other distributions, see [Running on Kiro CLI](harnesses/kiro-cli.md),
-[Running on Kiro IDE](harnesses/kiro-ide.md), or
-[Running on Codex CLI](harnesses/codex-cli.md), or
+[Running on Kiro IDE](harnesses/kiro-ide.md),
+[Running on Codex CLI](harnesses/codex-cli.md),
+[AI-DLC on Cursor](harnesses/cursor.md), or
 [AI-DLC on opencode](harnesses/opencode.md). The Claude Code implementation
 ships as a `.claude/` directory that you copy into your project.
 

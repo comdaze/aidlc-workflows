@@ -90,6 +90,7 @@ const HARNESS_DOC_DIRS = new Set([
   ".codex",
   ".opencode",
   ".aidlc",
+  ".cursor",
   ".git",
 ]);
 

@@ -93,6 +93,13 @@ export type TierProjection = {
    *  session's opencode.json defaults — same inherit-by-omission contract
    *  as codex. */
   opencode: { model: string | null; variant: OpencodeVariant | null };
+  /** Cursor agent .md frontmatter: `model:` (Cursor model id, e.g.
+   *  "claude-opus-5-medium"). Model-only BY DESIGN, like kiro: Cursor has no
+   *  effort key in agent frontmatter (effort rides the model id suffix). All
+   *  tiers ship null — model availability is Cursor-plan-dependent (Free
+   *  accounts reject every named model), so a pinned id would hard-fail
+   *  installs on lower plans; agents inherit the session model instead. */
+  cursor: { model: string | null };
 };
 
 export type Harness = keyof TierProjection;
@@ -107,12 +114,14 @@ export const TIER_PROJECTIONS: Record<Tier, TierProjection> = {
     codex: { model: null, effort: null },
     kiro: { model: null },
     opencode: { model: null, variant: null },
+    cursor: { model: null },
   },
   balanced: {
     claude: { model: "sonnet", effort: null },
     codex: { model: "openai.gpt-5.4", effort: null },
     kiro: { model: null },
     opencode: { model: "amazon-bedrock/global.anthropic.claude-sonnet-4-6", variant: null },
+    cursor: { model: null },
   },
   templated: {
     // The one deliberate downgrade: a smaller model at reduced effort for
@@ -121,6 +130,7 @@ export const TIER_PROJECTIONS: Record<Tier, TierProjection> = {
     codex: { model: "openai.gpt-5.4", effort: "medium" },
     kiro: { model: null },
     opencode: { model: "amazon-bedrock/global.anthropic.claude-sonnet-4-6", variant: "medium" },
+    cursor: { model: null },
   },
 };
 

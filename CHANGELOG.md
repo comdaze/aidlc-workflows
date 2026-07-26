@@ -1,6 +1,18 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [2.5.14] - 2026-07-26
+
+AI-DLC now ships a sixth harness: **Cursor** (`dist/cursor/`), serving the Cursor IDE and the Cursor CLI (`agent`) from one tree. Copy `dist/cursor/` into your project and run `/aidlc` (IDE chat) or `agent -p "/aidlc ..."` (headless CLI). Live-verified against cursor-agent 2026.07 on Linux; setup and caveats in `docs/guide/harnesses/cursor.md`.
+
+* New `dist/cursor/` distribution: engine + surfaces under `.cursor/` (skills, agents, rules, hooks, tools), `AGENTS.md` onboarding at the project root, and the neutral `aidlc/` workspace tree.
+* The 14 persona files in `.cursor/agents/` are live native subagents (the `task` tool targets them by name); they ship without model pins because Cursor model availability is plan-dependent (Free accounts can only use Auto).
+* Hooks ride `.cursor/hooks.json` through a new adapter (`.cursor/hooks/aidlc-cursor-adapter.ts`): the state-transition and reviewer read-scope guards block via Cursor's `permission: deny` channel; the Stop-hook forwarding nudge is advisory (`followup_message`) because Cursor's stop hook cannot block; subagent identity for reviewer-scope enforcement is reconstructed from Task-spawn payloads.
+* The AI-DLC method reaches context via `.cursor/rules/aidlc.mdc` (alwaysApply read instruction; Cursor rules do not expand `@`-imports) plus sessionStart context injection; `/aidlc space <name>` re-points the rule in place.
+* `.cursor/cli.json` pre-approves `Shell(bun)` so engine calls do not prompt; everything else follows your Cursor approval settings.
+* `/aidlc --doctor` gains a Cursor arm (adapter, hooks.json, cli.json, method-rule checks).
+* Scripting trap documented: the Cursor CLI exits 0 on every outcome, including auth and plan errors - assert on output text, not the exit code.
+
 ## [2.5.30] - 2026-07-30
 
 The default-scope resolver is now bundle-aware, so an install that disables the core scopes through plugin selection (a plugin-only install) no longer crashes or routes to a disabled scope when a default is needed. A scope can nominate itself as the install's freeform default with a new `freeform_default: true` frontmatter key; when the core preferred default (feature/poc) is not enabled the resolver picks the nominated scope, else the sole enabled plugin's alphabetically-first scope, else surfaces a descriptive error. Agent-facing prose that stated fixed stage and persona counts now points at the compiled graph and `--doctor` so it stays true under plugin selection. **Upgrade:** re-copy your `dist/<harness>/` shell into the project. No action is needed for a stock (no-plugin) install; behavior there is unchanged.

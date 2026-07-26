@@ -381,3 +381,57 @@ describe("t-active-space-includes: opencode opencode.json instructions glob", ()
     expect(readFileSync(join(root, "opencode.json"), "utf-8")).toBe("{ not json");
   });
 });
+
+describe("t-active-space-includes: Cursor rule + persona bodies", () => {
+  beforeEach(() => {
+    process.env.AIDLC_HARNESS_DIR = ".cursor";
+  });
+
+  function setup(): string {
+    const root = freshRoot();
+    seedSpaces(root);
+    mkdirSync(join(root, ".cursor", "rules"), { recursive: true });
+    cpSync(
+      distSurface("cursor", ".cursor", "rules", "aidlc.mdc"),
+      join(root, ".cursor", "rules", "aidlc.mdc"),
+    );
+    mkdirSync(join(root, ".cursor", "agents"), { recursive: true });
+    cpSync(
+      distSurface("cursor", ".cursor", "agents", "aidlc-architect-agent.md"),
+      join(root, ".cursor", "agents", "aidlc-architect-agent.md"),
+    );
+    return root;
+  }
+
+  test("re-points the method rule's file list and the persona bodies; idempotent at default", () => {
+    const root = setup();
+    const written = repointHarnessIncludes(root, "teamB");
+    expect(written).toEqual([
+      ".cursor/rules/aidlc.mdc",
+      ".cursor/agents/aidlc-architect-agent.md",
+    ]);
+    const rule = readFileSync(join(root, ".cursor", "rules", "aidlc.mdc"), "utf-8");
+    expect(rule).toContain("aidlc/spaces/teamB/memory/org.md");
+    expect(rule).toContain("aidlc/spaces/teamB/memory/phases/operation.md");
+    expect(rule).not.toContain("aidlc/spaces/default/memory/");
+    // The rule frontmatter (alwaysApply) survives the re-point untouched.
+    expect(rule).toMatch(/^alwaysApply: true$/m);
+    const agent = readFileSync(join(root, ".cursor", "agents", "aidlc-architect-agent.md"), "utf-8");
+    expect(agent).toContain("aidlc/spaces/teamB/memory/");
+    expect(agent).not.toContain("aidlc/spaces/default/memory/");
+    // Re-pointing back to default restores the committed bytes; a second
+    // default re-point is a clean no-op (nothing written).
+    repointHarnessIncludes(root, "default");
+    expect(repointHarnessIncludes(root, "default")).toEqual([]);
+    expect(readFileSync(join(root, ".cursor", "rules", "aidlc.mdc"), "utf-8")).toBe(
+      readFileSync(distSurface("cursor", ".cursor", "rules", "aidlc.mdc"), "utf-8"),
+    );
+  });
+
+  test("a missing rule file is skipped; personas alone still re-point", () => {
+    const root = setup();
+    rmSync(join(root, ".cursor", "rules", "aidlc.mdc"));
+    const written = repointHarnessIncludes(root, "teamB");
+    expect(written).toEqual([".cursor/agents/aidlc-architect-agent.md"]);
+  });
+});

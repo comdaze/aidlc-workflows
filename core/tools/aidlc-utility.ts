@@ -1215,6 +1215,7 @@ function handleDoctor(projectDir: string, flags: Record<string, string> = {}): v
     ];
     if (harness === ".kiro") tsHooks.push("aidlc-kiro-adapter");
     if (harness === ".codex") tsHooks.push("aidlc-codex-adapter");
+    if (harness === ".cursor") tsHooks.push("aidlc-cursor-adapter");
     for (const h of tsHooks) {
       const hookPath = join(projectDir, harness, "hooks", `${h}.ts`);
       results.push({
@@ -1299,6 +1300,20 @@ function handleDoctor(projectDir: string, flags: Record<string, string> = {}): v
       label:
         "hook trust: ensure [hooks.state] entries are pre-seeded in $CODEX_HOME/config.toml (`bun scripts/package.ts codex trust --project <dir>`) or run one TUI trust pass",
     });
+  } else if (harness === ".cursor") {
+    // Cursor: hooks.json (the hook wiring), cli.json (permissions), and the
+    // method rule are all inside .cursor/.
+    for (const [file, what, from] of [
+      ["hooks.json", "hook wiring", "dist/cursor/.cursor/hooks.json"],
+      ["cli.json", "Shell(bun) permission pre-approval", "dist/cursor/.cursor/cli.json"],
+      ["rules/aidlc.mdc", "method rule (alwaysApply read instruction)", "dist/cursor/.cursor/rules/aidlc.mdc"],
+    ] as const) {
+      results.push({
+        pass: existsSync(join(projectDir, harness, file)),
+        label: `${file} present (${what})`,
+        fix: `copy from \`${from}\``,
+      });
+    }
   } else if (harness === ".aidlc") {
     // opencode: the wiring config is the project-root opencode.json/jsonc
     // (permissions + the method-include instructions glob) plus the /aidlc
@@ -1327,7 +1342,7 @@ function handleDoctor(projectDir: string, flags: Record<string, string> = {}): v
   // 4b. Dual-harness coexistence (D-11): another harness tree installed AND a
   // workflow active is supported-but-untested — warn (advisory pass with a
   // visible label), never block.
-  const otherTrees = [".claude", ".kiro", ".codex", ".aidlc"].filter(
+  const otherTrees = [".claude", ".kiro", ".codex", ".aidlc", ".cursor"].filter(
     (h) => h !== harness && existsSync(join(projectDir, h, "tools", "aidlc-lib.ts")),
   );
   if (
@@ -2970,6 +2985,7 @@ const SCAN_EXCLUDE = new Set([
   ".codex",
   ".opencode",
   ".aidlc",
+  ".cursor",
   "aidlc-docs",
   "node_modules",
   ".git",

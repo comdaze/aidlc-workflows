@@ -178,6 +178,45 @@ export function repointHarnessIncludes(projectDir: string, space?: string): stri
     return written;
   }
 
+  if (harness === ".cursor") {
+    // Cursor — the method rule .cursor/rules/aidlc.mdc lists the method files
+    // as plain paths (Cursor rules have no @-import expansion); rewrite the
+    // space segment in each listed path. The persona files in .cursor/agents/
+    // carry active-space memory paths in their bodies exactly like opencode's.
+    const rulePath = join(harnessRoot, "rules", "aidlc.mdc");
+    if (existsSync(rulePath)) {
+      const raw = readSafe(rulePath);
+      if (raw !== null) {
+        repointFile(
+          rulePath,
+          join(harness, "rules", "aidlc.mdc"),
+          raw,
+          sp,
+          repointOpencodeAgentMemory,
+          written,
+        );
+      }
+    }
+    const agentsDir = join(harnessRoot, "agents");
+    if (existsSync(agentsDir)) {
+      for (const name of readdirSync(agentsDir).sort()) {
+        if (!name.endsWith(".md")) continue;
+        const p = join(agentsDir, name);
+        const raw = readSafe(p);
+        if (raw === null) continue;
+        repointFile(
+          p,
+          join(harness, "agents", name),
+          raw,
+          sp,
+          repointOpencodeAgentMemory,
+          written,
+        );
+      }
+    }
+    return written;
+  }
+
   if (harness === ".kiro") {
     // Kiro / Kiro-IDE — rewrite each agents/*.json that carries a memory glob.
     const agentsDir = join(harnessRoot, "agents");
