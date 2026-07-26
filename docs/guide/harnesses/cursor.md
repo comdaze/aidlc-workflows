@@ -79,7 +79,10 @@ projection directly (no `emit.ts`, no split dot-dir). The distribution is:
   sensors on write/edit, runtime-compile on shell, and state validation before
   compaction. The **PreToolUse guards block** via Cursor's
   `{"permission":"deny","agent_message":...}` stdout channel. Cursor names its
-  shell tool `Shell`; the adapter maps it to the core hooks' `Bash`.
+  shell tool `Shell`; the adapter maps it to the core hooks' `Bash`. Cursor's
+  first-class `Delete` tool (unique to this harness - everywhere else deletion
+  goes through the shell) is presented to the reviewer-scope guard as a write so a
+  unit-scoped reviewer cannot delete a sibling unit's artifacts.
 - **Forwarding-loop enforcement is advisory.** Cursor's `stop` hook cannot
   refuse a stop, so when the core stop hook answers `block` the adapter surfaces
   a follow-up nudge instead (the same posture as opencode). The forwarding loop
@@ -112,6 +115,16 @@ projection directly (no `emit.ts`, no split dot-dir). The distribution is:
   follows your Cursor approval settings.
 - **MCP servers**: none ship; configure your own under `.cursor/mcp.json` if
   needed.
+- **Headless `agent -p` runs cannot pass approval gates.** The human-presence
+  mint rides `beforeSubmitPrompt`, which Cursor fires only for an interactive
+  submission (verified against cursor-agent 2026.07) - so a print-mode run
+  records no `HUMAN_TURN` and a gated stage refuses its approval by design,
+  rather than letting an unattended model approve its own work. Use headless
+  mode for the read-only utilities (`--status`, `--doctor`, `--version`) and for
+  autonomous Construction (which is exempt because it has no human at the gate);
+  run gated workflows in an interactive Cursor session. This is a property of
+  the framework's presence gate, not a Cursor limitation - every harness mints
+  presence from a human-prompt event.
 
 ## Verifying an install
 

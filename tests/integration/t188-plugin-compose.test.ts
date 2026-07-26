@@ -203,9 +203,14 @@ describe("t188 plugin compose — emit + compose the contribution seam", () => {
     const wiring = JSON.parse(
       readFileSync(join(built, "hooks", "hooks.json"), "utf-8"),
     ) as {
+      version?: number;
       hooks?: Record<string, Array<Record<string, unknown>>>;
     };
-    expect(Object.keys(wiring)).toEqual(["hooks"]);
+    // `version` is REQUIRED, not cosmetic: Cursor's hook loader delivers zero
+    // events for a hooks.json missing it, silently and with rc 0, so a
+    // version-less projection ships an inert plugin that looks installed.
+    expect(Object.keys(wiring)).toEqual(["version", "hooks"]);
+    expect(wiring.version).toBe(1);
     expect(Object.keys(wiring.hooks ?? {})).toEqual(["sessionStart"]);
     const entries = wiring.hooks?.sessionStart ?? [];
     expect(entries).toHaveLength(1);

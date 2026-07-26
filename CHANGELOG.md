@@ -11,7 +11,8 @@ AI-DLC now ships a sixth harness: **Cursor** (`dist/cursor/`), serving the Curso
 * The AI-DLC method reaches context via `.cursor/rules/aidlc.mdc` (alwaysApply read instruction; Cursor rules do not expand `@`-imports) plus sessionStart context injection; `/aidlc space <name>` re-points the rule in place.
 * `.cursor/cli.json` pre-approves `Shell(bun)` so engine calls do not prompt; everything else follows your Cursor approval settings.
 * `/aidlc --doctor` gains a Cursor arm (adapter, hooks.json, cli.json, method-rule checks).
-* Cursor plugin projections use Cursor's native flat `hooks.sessionStart[].command` schema and plugin-relative compose path.
+* Cursor plugin projections use Cursor's native flat `hooks.sessionStart[].command` schema and plugin-relative compose path, including the required `version` field - Cursor delivers no hook events at all for a `hooks.json` that omits it, silently and with a zero exit code, so a version-less projection would install a plugin whose hooks never run.
+* Cursor's first-class file-deletion tool (`Delete`) is now covered by the reviewer read-scope guard. Every other harness deletes through the shell, which that guard already inspects, so a unit-scoped reviewer on Cursor could previously delete a sibling unit's artifacts unchallenged.
 * Release binaries now stage the Cursor runtime and route `aidlc adapter cursor <target>` through the packaged Cursor adapter.
 * Scripting trap documented: the Cursor CLI exits 0 on every outcome, including auth and plan errors - assert on output text, not the exit code.
 

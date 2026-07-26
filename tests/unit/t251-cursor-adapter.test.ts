@@ -342,6 +342,77 @@ describe("t251 cursor adapter payload conversion", () => {
     }
   });
 
+  test("14: Cursor's Delete tool is reviewer-scope-enforced as a write", () => {
+    const proj = installedProject();
+    seedStateFile(proj, "state-construction.md");
+    const record = seededRecordDir(proj);
+    rmSync(ledgerFileFor(proj), { force: true });
+    mkdirSync(join(record, "construction", "unit-b"), { recursive: true });
+    writeFileSync(
+      join(record, ".aidlc-reviewer-dispatch.json"),
+      JSON.stringify({
+        reviewer: "aidlc-architecture-reviewer-agent",
+        stage: "functional-design",
+        unit: "unit-a",
+        exempt: [],
+      }),
+    );
+    runAdapter(proj, "guards", payload("preToolUseTask", proj));
+
+    // "Delete" is Cursor-only (every other harness removes files through the
+    // shell). The reviewer-scope allowlist never mentions it, so without the
+    // adapter's reviewer-side rename a scoped reviewer could delete a SIBLING
+    // unit's artifacts unchallenged.
+    const del = runAdapter(
+      proj,
+      "guards",
+      payload("preToolUseSubagentRead", proj, {
+        tool_name: "Delete",
+        tool_input: { file_path: join(record, "construction", "unit-b", "design.md") },
+      }),
+    );
+    expect(del.code).toBe(0);
+    const out = JSON.parse(del.stdout) as { permission?: string; agent_message?: string };
+    expect(out.permission).toBe("deny");
+    expect(out.agent_message ?? "").toContain("unit-a");
+
+    // The reviewer's OWN unit stays deletable - the bound is scope, not a ban.
+    mkdirSync(join(record, "construction", "unit-a"), { recursive: true });
+    const own = runAdapter(
+      proj,
+      "guards",
+      payload("preToolUseSubagentRead", proj, {
+        tool_name: "Delete",
+        tool_input: { file_path: join(record, "construction", "unit-a", "scratch.md") },
+      }),
+    );
+    expect(own.code).toBe(0);
+    expect(own.stdout.trim()).toBe("");
+  });
+
+  test("15: Delete keeps its real name for the state-transition guard", () => {
+    const proj = installedProject();
+    const captureFile = join(proj, "state-transition-input.json");
+    writeFileSync(
+      join(proj, ".cursor", "hooks", "aidlc-state-transition-guard.ts"),
+      `await Bun.write(${JSON.stringify(captureFile)}, await Bun.stdin.text());\n`,
+    );
+
+    const r = runAdapter(
+      proj,
+      "guards",
+      payload("preToolUseSubagentRead", proj, {
+        tool_name: "Delete",
+        tool_input: { file_path: join(proj, "obsolete.md") },
+      }),
+    );
+    expect(r.code).toBe(0);
+    const forwarded = JSON.parse(readFileSync(captureFile, "utf-8")) as {
+      tool_name?: string;
+    };
+    expect(forwarded.tool_name).toBe("Delete");
+  });
+
   test("13: unknown target is a silent no-op (wiring typo cannot break a turn)", () => {
     const proj = installedProject();
     const r = runAdapter(proj, "no-such-target", payload("sessionStart", proj));

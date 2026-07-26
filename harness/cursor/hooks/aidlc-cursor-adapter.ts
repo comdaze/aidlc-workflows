@@ -182,11 +182,26 @@ export async function run(
   // Everything else (Read/Write/Edit/Grep/Glob/Task/...) already matches.
   const toolName = cursor.tool_name === "Shell" ? "Bash" : (cursor.tool_name ?? "");
 
-  function claudeShaped(eventName: string): string {
+  // Cursor is the first harness with a FIRST-CLASS file-deletion tool
+  // ("Delete", tool_input.file_path; probe-verified). Every other harness
+  // deletes through the shell, which reviewer-scope already reads as Bash.
+  // The reviewer-scope allowlist knows nothing about "Delete" and would exit
+  // early, letting a unit-scoped reviewer delete a SIBLING unit's artifacts
+  // unchallenged. Present it to that guard as a path-shaped write so the same
+  // scope bound applies.
+  //
+  // Reviewer-guard-only on purpose: the state-transition guard detects direct
+  // aidlc-state.ts lifecycle commands in Bash and has no path-tool contract;
+  // the audit logger derives ARTIFACT_CREATED / ARTIFACT_UPDATED from the tool
+  // name, so folding Delete into Write there would log a deletion as a write.
+  // Those paths keep the real name.
+  const reviewerToolName = toolName === "Delete" ? "Write" : toolName;
+
+  function claudeShaped(eventName: string, nameOverride?: string): string {
     return JSON.stringify({
       ...cursor,
       hook_event_name: eventName,
-      tool_name: toolName,
+      tool_name: nameOverride ?? toolName,
       ...(activeSubagent() ? { agent_type: activeSubagent() } : {}),
     });
   }
@@ -284,9 +299,18 @@ export async function run(
         if (typeof sub === "string" && sub.length > 0) recordSpawn(sub);
         return 0;
       }
-      const fwd = claudeShaped("PreToolUse");
-      for (const guard of ["aidlc-state-transition-guard.ts", "aidlc-reviewer-scope.ts"]) {
-        const r = runCoreWithStderr(guard, fwd);
+      const guards = [
+        {
+          file: "aidlc-state-transition-guard.ts",
+          input: claudeShaped("PreToolUse"),
+        },
+        {
+          file: "aidlc-reviewer-scope.ts",
+          input: claudeShaped("PreToolUse", reviewerToolName),
+        },
+      ];
+      for (const guard of guards) {
+        const r = runCoreWithStderr(guard.file, guard.input);
         if (r.code === 2) {
           const reason = r.stderr.trim() || "blocked by AIDLC guard hook";
           process.stdout.write(`${JSON.stringify({ permission: "deny", agent_message: reason })}\n`);

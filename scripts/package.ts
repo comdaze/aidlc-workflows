@@ -930,9 +930,14 @@ function buildPluginProjection(pluginName: string, harnessName: string, outDir: 
       }, null, 2) + "\n"
     );
   } else if (kind === "cursor") {
+    // `version` is load-bearing, not decoration: Cursor's hook loader silently
+    // delivers ZERO events for a hooks.json without it (probe-verified against
+    // cursor-agent 2026.07.23 - no error, no diagnostic, rc 0), so omitting it
+    // would leave every plugin hook inert and the breakage invisible.
     writeFileSync(
       join(hooksDir, "hooks.json"),
       JSON.stringify({
+        version: 1,
         hooks: {
           sessionStart: [{ command }],
         },
