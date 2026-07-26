@@ -24,7 +24,7 @@ type HarnessCapabilities = {
   rootFiles: readonly string[];
   skillsRoot: string;
   plugin: {
-    kind: "store" | "kiro";
+    kind: "store" | "kiro" | "cursor";
     manifestDir: string;
     wiringFile: string;
   };
@@ -91,7 +91,7 @@ const HARNESS_CAPABILITIES = {
     rootFiles: [".gitignore", "AGENTS.md"],
     skillsRoot: ".cursor/skills",
     plugin: {
-      kind: "store",
+      kind: "cursor",
       manifestDir: ".cursor-plugin",
       wiringFile: "hooks/hooks.json",
     },

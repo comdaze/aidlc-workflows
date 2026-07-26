@@ -8,8 +8,9 @@
 // failure is caught and logged to the hooks-health file instead of swallowed by
 // `2>/dev/null || true`.
 //
-// Runs on SessionStart (Claude/Codex) or via the Kiro .kiro.hook. Harness-agnostic:
-//   PLUGIN_ROOT   ← CLAUDE_PLUGIN_ROOT | PLUGIN_ROOT | AIDLC_PLUGIN_ROOT
+// Runs on SessionStart (Claude/Codex/Cursor) or via the Kiro .kiro.hook. Harness-agnostic:
+//   PLUGIN_ROOT   ← CLAUDE_PLUGIN_ROOT | PLUGIN_ROOT | AIDLC_PLUGIN_ROOT |
+//                   this file's parent plugin directory
 //   PROJECT_DIR   ← CLAUDE_PROJECT_DIR | AIDLC_PROJECT_DIR | PWD  (Codex unsets the first)
 //   HARNESS_LEAF  ← AIDLC_HARNESS_DIR  (".claude" default)
 //
@@ -28,11 +29,15 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { join, relative } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 const PLUGIN_ROOT =
-  process.env.CLAUDE_PLUGIN_ROOT || process.env.PLUGIN_ROOT || process.env.AIDLC_PLUGIN_ROOT || "";
+  process.env.CLAUDE_PLUGIN_ROOT ||
+  process.env.PLUGIN_ROOT ||
+  process.env.AIDLC_PLUGIN_ROOT ||
+  dirname(dirname(fileURLToPath(import.meta.url)));
 const PROJECT_DIR =
   process.env.CLAUDE_PROJECT_DIR || process.env.AIDLC_PROJECT_DIR || process.env.PWD || process.cwd();
 const HARNESS_LEAF = process.env.AIDLC_HARNESS_DIR || ".claude";
@@ -332,11 +337,6 @@ async function installedSchemaAccepts(key: string, sampleValue: unknown): Promis
 export async function compose(): Promise<void> {
 if (!existsSync(join(HARNESS_DIR, "tools", "aidlc-graph.ts"))) {
   return; // not an AIDLC project — nothing to do (no drop: not our project)
-}
-if (!PLUGIN_ROOT) {
-  recordDrop("plugin root env not set (CLAUDE_PLUGIN_ROOT/PLUGIN_ROOT/AIDLC_PLUGIN_ROOT)");
-  await flushDrops();
-  return;
 }
 // A set-but-wrong PLUGIN_ROOT (e.g. a mistyped path from a hand-run command)
 // would otherwise pass the non-empty check and then find nothing to copy/merge —

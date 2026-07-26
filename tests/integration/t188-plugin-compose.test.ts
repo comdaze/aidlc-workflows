@@ -36,6 +36,7 @@ const CLAUDE_DIST = join(REPO_ROOT, "dist", "claude", ".claude");
 const OPENCODE_DIST = join(REPO_ROOT, "dist", "opencode");
 const KIRO_DIST = join(REPO_ROOT, "dist", "kiro", ".kiro");
 const CODEX_DIST = join(REPO_ROOT, "dist", "codex", ".codex");
+const CURSOR_DIST = join(REPO_ROOT, "dist", "cursor");
 const STAGE_TABLE_BEGIN =
   "<!-- BEGIN: compiled stage graph via `bun aidlc-utility.ts stage-table` - do NOT hand-edit -->";
 const STAGE_TABLE_END = "<!-- END: compiled stage graph -->";
@@ -195,6 +196,49 @@ describe("t188 plugin compose — emit + compose the contribution seam", () => {
         `${harness.name}: knowledge`,
       ).toBe(true);
     }
+  });
+
+  test("Cursor projection uses Cursor's flat camelCase hook schema", () => {
+    const built = pluginBuilds.get("cursor")!;
+    const wiring = JSON.parse(
+      readFileSync(join(built, "hooks", "hooks.json"), "utf-8"),
+    ) as {
+      hooks?: Record<string, Array<Record<string, unknown>>>;
+    };
+    expect(Object.keys(wiring)).toEqual(["hooks"]);
+    expect(Object.keys(wiring.hooks ?? {})).toEqual(["sessionStart"]);
+    const entries = wiring.hooks?.sessionStart ?? [];
+    expect(entries).toHaveLength(1);
+    expect(Object.keys(entries[0] ?? {})).toEqual(["command"]);
+    const command = String(entries[0]?.command ?? "");
+    expect(command).toContain("AIDLC_HARNESS_DIR=.cursor");
+    expect(command).toContain('"$BUN" "./hooks/compose.ts"');
+    expect(command).not.toContain("$" + "{PLUGIN_ROOT}");
+  });
+
+  test("Cursor's direct composer fallback resolves its plugin root from the hook path", () => {
+    const built = pluginBuilds.get("cursor")!;
+    const cursorProject = join(tmp, "cursor-compose");
+    cpSync(CURSOR_DIST, cursorProject, { recursive: true });
+    const env: NodeJS.ProcessEnv = { ...process.env };
+    delete env.CLAUDE_PLUGIN_ROOT;
+    delete env.PLUGIN_ROOT;
+    delete env.AIDLC_PLUGIN_ROOT;
+    delete env.CLAUDE_PROJECT_DIR;
+    env.AIDLC_PROJECT_DIR = cursorProject;
+    env.AIDLC_HARNESS_DIR = ".cursor";
+
+    const compose = spawnSync(BUN, [join(built, "hooks", "compose.ts")], {
+      cwd: cursorProject,
+      encoding: "utf-8",
+      timeout: TIMEOUT_MS - 5_000,
+      env,
+    });
+    expect(compose.status, compose.stderr).toBe(0);
+    const cursorGraph = JSON.parse(
+      readFileSync(join(cursorProject, ".cursor", "tools", "data", "stage-graph.json"), "utf-8"),
+    ) as GraphStage[];
+    expect(cursorGraph.some((item) => item.slug === "test-pro-integration")).toBe(true);
   });
 
   test("OpenCode compose emits plugin agents to both inline and native rosters", () => {

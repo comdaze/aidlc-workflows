@@ -196,4 +196,18 @@ describe("t250 dist/cursor packaging parity + shell shape", () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  test("9: Cursor install docs copy directory contents without nesting existing targets", () => {
+    for (const file of [
+      join(REPO_ROOT, "README.md"),
+      join(REPO_ROOT, "docs", "guide", "harnesses", "cursor.md"),
+    ]) {
+      const raw = readFileSync(file, "utf-8");
+      expect(raw, file).toContain("mkdir -p your-project/.cursor your-project/aidlc");
+      expect(raw, file).toContain("cp -R dist/cursor/.cursor/. your-project/.cursor/");
+      expect(raw, file).toContain("cp -R dist/cursor/aidlc/.   your-project/aidlc/");
+      expect(raw, file).not.toContain("cp -r dist/cursor/.cursor/ your-project/.cursor/");
+      expect(raw, file).not.toContain("cp -r dist/cursor/aidlc/");
+    }
+  });
 });

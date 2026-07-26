@@ -123,11 +123,12 @@ export type HarnessManifest = {
    * NEW harness added per the one-core-many-harnesses promise automatically
    * gets a plugin projection instead of being silently skipped. A harness with
    * no host plugin store (folder-drop + hook, like Kiro) sets kind "kiro".
+   * Cursor sets kind "cursor" for its flat camelCase hook schema.
    */
   plugin?: {
-    /** Host plugin-manifest dir name (".claude-plugin", ".codex-plugin", ".kiro-plugin"). */
+    /** Host plugin-manifest dir name (for example ".claude-plugin" or ".cursor-plugin"). */
     manifestDir: string;
-    /** "store" = host plugin store (Claude/Codex); "kiro" = folder-drop + .kiro.hook. */
-    kind: "store" | "kiro";
+    /** Host-specific plugin hook projection shape. */
+    kind: "store" | "kiro" | "cursor";
   };
 };

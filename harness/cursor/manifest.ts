@@ -82,7 +82,7 @@ const manifest: HarnessManifest = {
   // Runners generate into .cursor/skills/ — natively discovered.
   emit: null,
 
-  plugin: { manifestDir: ".cursor-plugin", kind: "store" },
+  plugin: { manifestDir: ".cursor-plugin", kind: "cursor" },
 };
 
 export default manifest;

@@ -33,7 +33,7 @@
 //                  stop
 
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -225,8 +225,40 @@ export async function run(
     }
 
     case "mint": {
-      // beforeSubmitPrompt: a real human acted this turn. Advisory.
+      // beforeSubmitPrompt: a real human acted this turn.
       runCore("aidlc-mint-presence.ts", JSON.stringify({ hook_event_name: "UserPromptSubmit" }));
+      // Cursor's sessionStart fires only for a new conversation and carries no
+      // startup/resume discriminator. Probe the core resume-rebind logic here,
+      // where the same session_id is available. beforeSubmitPrompt cannot
+      // inject context, so block this one submission through its documented
+      // user_message channel when the active intent drifted.
+      if (cursor.session_id) {
+        const r = runCore(
+          "aidlc-session-start.ts",
+          JSON.stringify({
+            hook_event_name: "SessionStart",
+            source: "resume",
+            session_id: cursor.session_id,
+            rebind_check: true,
+          }),
+        );
+        try {
+          const parsed = JSON.parse(r.stdout) as { additionalContext?: string };
+          const offer = parsed.additionalContext
+            ?.split(/\r?\n/)
+            .find((line) => line.startsWith("INTENT REBIND OFFER:"));
+          if (offer) {
+            process.stdout.write(`${JSON.stringify({
+              continue: false,
+              user_message:
+                `${offer} Submit the named /aidlc switch command to return, ` +
+                "or resubmit your prompt to continue with the active intent.",
+            })}\n`);
+          }
+        } catch {
+          // no rebind offer — submission continues normally
+        }
+      }
       return 0;
     }
 
@@ -238,6 +270,16 @@ export async function run(
       // Cursor's {"permission":"deny","agent_message"} stdout JSON
       // (live-verified: the deny blocks the call and relays the reason).
       if (toolName === "Task") {
+        const parentAgent = activeSubagent();
+        if (parentAgent) {
+          process.stdout.write(`${JSON.stringify({
+            permission: "deny",
+            agent_message:
+              `AIDLC nested delegation is not allowed: ${parentAgent} must complete ` +
+              "its delegated task directly and cannot invoke Task.",
+          })}\n`);
+          return 0;
+        }
         const sub = cursor.tool_input?.subagent_type;
         if (typeof sub === "string" && sub.length > 0) recordSpawn(sub);
         return 0;

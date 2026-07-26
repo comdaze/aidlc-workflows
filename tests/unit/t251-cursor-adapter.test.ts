@@ -31,6 +31,11 @@ import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import {
+  birthIntent,
+  readAllAuditShards,
+  setActiveIntentCursor,
+} from "../../dist/cursor/.cursor/tools/aidlc-lib.ts";
+import {
   createTestProject,
   seedAuditFile,
   seededAuditShard,
@@ -48,6 +53,7 @@ const scratch: string[] = [];
 
 afterEach(() => {
   for (const dir of scratch.splice(0)) {
+    rmSync(ledgerFileFor(dir), { force: true });
     rmSync(dir, { recursive: true, force: true });
   }
 });
@@ -108,7 +114,7 @@ describe("t251 cursor adapter payload conversion", () => {
     expect(out.additional_context as string).toContain("AIDLC WORKFLOW ACTIVE");
     expect(out).not.toHaveProperty("additionalContext");
     // The session start landed in the audit trail through the core hook.
-    const shard = readFileSync(seededAuditShard(proj), "utf-8");
+    const shard = readAllAuditShards(proj);
     expect(shard).toContain("SESSION_STARTED");
   });
 
@@ -221,7 +227,78 @@ describe("t251 cursor adapter payload conversion", () => {
     expect(shard).toContain("HUMAN_TURN");
   });
 
-  test("7: sessionEnd forwards the reason into SESSION_ENDED", () => {
+  test("7: a delegated conversation cannot spawn a nested Task or overwrite the parent ledger", () => {
+    const proj = installedProject();
+    seedStateFile(proj, "state-construction.md");
+    const ledger = ledgerFileFor(proj);
+    rmSync(ledger, { force: true });
+
+    const parent = runAdapter(proj, "guards", payload("preToolUseTask", proj));
+    expect(parent.code).toBe(0);
+    const before = readFileSync(ledger, "utf-8");
+
+    const nested = runAdapter(
+      proj,
+      "guards",
+      payload("preToolUseTask", proj, {
+        conversation_id: "ece1fcdd-ebab-4b21-b074-95e19faafc3a",
+        session_id: "ece1fcdd-ebab-4b21-b074-95e19faafc3a",
+        tool_input: {
+          description: "Nested probe",
+          prompt: "Try to delegate again.",
+          subagent_type: "aidlc-developer-agent",
+        },
+      }),
+    );
+    expect(nested.code).toBe(0);
+    const out = JSON.parse(nested.stdout) as { permission?: string; agent_message?: string };
+    expect(out.permission).toBe("deny");
+    expect(out.agent_message ?? "").toContain("nested delegation is not allowed");
+    expect(readFileSync(ledger, "utf-8")).toBe(before);
+  });
+
+  test("8: beforeSubmitPrompt surfaces a one-time rebind offer after intent drift", () => {
+    const proj = installedProject();
+    const a = birthIntent(proj, "intent-a", "default", "feature");
+    const b = birthIntent(proj, "intent-b", "default", "feature");
+    setActiveIntentCursor(proj, a.dirName, "default");
+
+    const started = runAdapter(proj, "session-start", payload("sessionStart", proj));
+    expect(started.code).toBe(0);
+    setActiveIntentCursor(proj, b.dirName, "default");
+
+    const warned = runAdapter(proj, "mint", payload("beforeSubmitPrompt", proj));
+    expect(warned.code).toBe(0);
+    const out = JSON.parse(warned.stdout) as { continue?: boolean; user_message?: string };
+    expect(out.continue).toBe(false);
+    expect(out.user_message ?? "").toContain("INTENT REBIND OFFER");
+    expect(out.user_message ?? "").toContain("intent-a");
+    expect(out.user_message ?? "").toContain("intent-b");
+    expect(out.user_message ?? "").toContain("/aidlc intent intent-a");
+
+    // The blocked warning is consumed: resubmitting continues on B instead of
+    // deadlocking on the same beforeSubmitPrompt response.
+    const next = runAdapter(proj, "mint", payload("beforeSubmitPrompt", proj));
+    expect(next.code).toBe(0);
+    expect(next.stdout.trim()).toBe("");
+    const shard = readAllAuditShards(proj);
+    expect(shard).toContain("HUMAN_TURN");
+    expect(shard).not.toContain("SESSION_RESUMED");
+  });
+
+  test("9: beforeSubmitPrompt is silent when the session's intent is unchanged", () => {
+    const proj = installedProject();
+    const a = birthIntent(proj, "unchanged", "default", "feature");
+    setActiveIntentCursor(proj, a.dirName, "default");
+    runAdapter(proj, "session-start", payload("sessionStart", proj));
+
+    const r = runAdapter(proj, "mint", payload("beforeSubmitPrompt", proj));
+    expect(r.code).toBe(0);
+    expect(r.stdout.trim()).toBe("");
+    expect(readAllAuditShards(proj)).toContain("HUMAN_TURN");
+  });
+
+  test("10: sessionEnd forwards the reason into SESSION_ENDED", () => {
     const proj = installedProject();
     seedStateFile(proj, "state-construction.md");
     const r = runAdapter(proj, "session-end", payload("sessionEnd", proj));
@@ -231,7 +308,7 @@ describe("t251 cursor adapter payload conversion", () => {
     expect(shard).toContain("completed");
   });
 
-  test("8: stop converts a core block into an advisory followup_message", () => {
+  test("11: stop converts a core block into an advisory followup_message", () => {
     const proj = installedProject();
     seedStateFile(proj, "state-construction.md");
     // An in-flight stage (state seeded mid-construction with no completed
@@ -248,7 +325,7 @@ describe("t251 cursor adapter payload conversion", () => {
     }
   });
 
-  test("9: malformed stdin fails open on every target", () => {
+  test("12: malformed stdin fails open on every target", () => {
     const proj = installedProject();
     for (const target of [
       "session-start",
@@ -265,7 +342,7 @@ describe("t251 cursor adapter payload conversion", () => {
     }
   });
 
-  test("10: unknown target is a silent no-op (wiring typo cannot break a turn)", () => {
+  test("13: unknown target is a silent no-op (wiring typo cannot break a turn)", () => {
     const proj = installedProject();
     const r = runAdapter(proj, "no-such-target", payload("sessionStart", proj));
     expect(r.code).toBe(0);

@@ -48,8 +48,9 @@ projection directly (no `emit.ts`, no split dot-dir). The distribution is:
 1. Copy the distribution into your project:
 
    ```bash
-   cp -r dist/cursor/.cursor/ your-project/.cursor/
-   cp -r dist/cursor/aidlc/   your-project/aidlc/     # the workspace shell - a sibling of .cursor/, not inside it
+   mkdir -p your-project/.cursor your-project/aidlc
+   cp -R dist/cursor/.cursor/. your-project/.cursor/
+   cp -R dist/cursor/aidlc/.   your-project/aidlc/     # the workspace shell - a sibling of .cursor/, not inside it
    cp dist/cursor/AGENTS.md   your-project/AGENTS.md  # or merge into yours
    ```
 

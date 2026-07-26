@@ -109,7 +109,7 @@ describe("t238 build-binaries release builder", () => {
     expect(existsSync(native.artifact)).toBe(true);
     expect(relative(REPO_ROOT, native.artifact).replace(/\\/g, "/").startsWith("build/binaries/")).toBe(true);
     expect(native.bytes).toBeGreaterThan(10 * 1024 * 1024);
-    for (const harness of ["claude", "codex", "kiro", "kiro-ide"]) {
+    for (const harness of ["claude", "codex", "cursor", "kiro", "kiro-ide"]) {
       expect(existsSync(join(dirname(native.artifact), "runtime", harness))).toBe(true);
     }
 
@@ -134,6 +134,7 @@ describe("t238 build-binaries release builder", () => {
       "stage-table-check",
       "scope-table-check",
       "runtime-codex",
+      "runtime-cursor",
       "runtime-kiro",
       "runtime-kiro-ide",
       "harness-probe-kiro",
@@ -149,6 +150,7 @@ describe("t238 build-binaries release builder", () => {
       "hook-validate-state",
       "statusline",
       "adapter-codex-validate-state",
+      "adapter-cursor-validate-state",
       "routed-project-dir",
     ]) {
       expect(gate(native, name).ok, name).toBe(true);

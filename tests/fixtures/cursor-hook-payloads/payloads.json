@@ -12,6 +12,19 @@
     "user_email": "user@example.com",
     "transcript_path": null
   },
+  "beforeSubmitPrompt": {
+    "conversation_id": "5d190fd9-a074-404e-bbae-2d5ccf966f6e",
+    "generation_id": "5d190fd9-a074-404e-bbae-2d5ccf966f6e",
+    "model": "default",
+    "prompt": "continue the workflow",
+    "is_background_agent": false,
+    "session_id": "5d190fd9-a074-404e-bbae-2d5ccf966f6e",
+    "hook_event_name": "beforeSubmitPrompt",
+    "cursor_version": "2026.07.23-e383d2b",
+    "workspace_roots": ["{{PROJECT}}"],
+    "user_email": "user@example.com",
+    "transcript_path": "{{TRANSCRIPT}}"
+  },
   "sessionEnd": {
     "conversation_id": "3da1159d-920c-4072-9a86-1d05b247b8d2",
     "generation_id": "3da1159d-920c-4072-9a86-1d05b247b8d2",

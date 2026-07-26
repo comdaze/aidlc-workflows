@@ -257,8 +257,9 @@ One install serves both surfaces: the Cursor IDE and the CLI (`agent`) share the
 **2. Set up your project**
 
 ```bash
-cp -r dist/cursor/.cursor/ your-project/.cursor/
-cp -r dist/cursor/aidlc/   your-project/aidlc/     # the workspace shell — a sibling of .cursor/, not inside it
+mkdir -p your-project/.cursor your-project/aidlc
+cp -R dist/cursor/.cursor/. your-project/.cursor/
+cp -R dist/cursor/aidlc/.   your-project/aidlc/     # the workspace shell — a sibling of .cursor/, not inside it
 cp dist/cursor/AGENTS.md   your-project/AGENTS.md  # merge if you already have one
 ```
 

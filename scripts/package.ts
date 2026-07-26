@@ -827,7 +827,11 @@ function discoverPluginNames(): string[] {
 // of being silently skipped (the omission class that lost kiro-ide in round 1).
 // harnessLeaf = manifest.harnessDir; manifestDir + kind come from the manifest's
 // optional `plugin` block, defaulting to "<harnessDir>-plugin" + "store".
-type PluginTarget = { manifestDir: string; harnessLeaf: string; kind: "store" | "kiro" };
+type PluginTarget = {
+  manifestDir: string;
+  harnessLeaf: string;
+  kind: "store" | "kiro" | "cursor";
+};
 function pluginTargetFor(harnessName: string): PluginTarget | null {
   if (!existsSync(join(HARNESS_ROOT, harnessName, "manifest.ts"))) return null;
   const m = loadManifest(harnessName);
@@ -892,13 +896,15 @@ function buildPluginProjection(pluginName: string, harnessName: string, outDir: 
   // 3. The compose hook + per-harness wiring. Prefer an installed aidlc binary
   //    so the host hook can front the fold through `aidlc plugin sync`; fall back
   //    to the direct bun compose.ts path for source/tree installs. Claude
-  //    populates CLAUDE_PLUGIN_ROOT, Codex PLUGIN_ROOT; AIDLC_HARNESS_DIR targets
-  //    the right harness tree.
+  //    populates CLAUDE_PLUGIN_ROOT, Codex PLUGIN_ROOT, and Cursor resolves
+  //    relative commands from the plugin root; AIDLC_HARNESS_DIR targets the
+  //    right harness tree.
   const hooksDir = join(outDir, "hooks");
   mkdirSync(hooksDir, { recursive: true });
   for (const f of readdirSync(templateHooks)) cpSync(join(templateHooks, f), join(hooksDir, f));
   // biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell parameter expansions
   const rootExpr = harnessName === "claude" ? "${CLAUDE_PLUGIN_ROOT}" : "${PLUGIN_ROOT}";
+  const composePath = kind === "cursor" ? "./hooks/compose.ts" : `${rootExpr}/hooks/compose.ts`;
   // Probe aidlc on PATH first, then bun on PATH / ~/.bun/bin. If neither is
   // executable, exit 0 with a note rather than running a non-existent binary.
   const aidlcExpr =
@@ -908,7 +914,7 @@ function buildPluginProjection(pluginName: string, harnessName: string, outDir: 
     'BUN=$(command -v bun 2>/dev/null || true); ' +
     '[ -z "$BUN" ] && [ -x "$HOME/.bun/bin/bun" ] && BUN="$HOME/.bun/bin/bun"; ' +
     '[ -z "$BUN" ] && { echo "aidlc plugin compose: aidlc and bun not found, skipping" >&2; exit 0; }';
-  const command = `sh -c '${aidlcExpr}${bunExpr}; AIDLC_HARNESS_DIR=${harnessLeaf} "$BUN" "${rootExpr}/hooks/compose.ts"'`;
+  const command = `sh -c '${aidlcExpr}${bunExpr}; AIDLC_HARNESS_DIR=${harnessLeaf} "$BUN" "${composePath}"'`;
 
   if (kind === "kiro") {
     writeFileSync(
@@ -921,6 +927,15 @@ function buildPluginProjection(pluginName: string, harnessName: string, outDir: 
         when: { type: "promptSubmit" },
         // biome-ignore lint/suspicious/noThenProperty: required Kiro hook schema field
         then: { type: "runCommand", command },
+      }, null, 2) + "\n"
+    );
+  } else if (kind === "cursor") {
+    writeFileSync(
+      join(hooksDir, "hooks.json"),
+      JSON.stringify({
+        hooks: {
+          sessionStart: [{ command }],
+        },
       }, null, 2) + "\n"
     );
   } else {
