@@ -1847,22 +1847,14 @@
     "mode": "inline",
     "for_each": "unit-of-work",
     "produces": [
-      "deployment-architecture",
-      "infrastructure-services",
+      "infrastructure-specification",
       "monitoring-design",
       "cicd-pipeline"
     ],
-    "optional_produces": [
-      "shared-infrastructure"
-    ],
     "produces_kinds": {
-      "deployment-architecture": [
+      "infrastructure-specification": [
         "service",
         "ui",
-        "packaging"
-      ],
-      "infrastructure-services": [
-        "service",
         "packaging"
       ],
       "monitoring-design": [
@@ -1925,8 +1917,8 @@
     ],
     "reviewer": "aidlc-architecture-reviewer-agent",
     "reviewer_max_iterations": 2,
-    "inputs": "NFR design artifacts, application design, functional design",
-    "outputs": "deployment-architecture.md, infrastructure-services.md, monitoring-design.md, cicd-pipeline.md, CONDITIONAL: shared-infrastructure.md (under this stage's per-unit record dir, engine-resolved); per-kind applicability via produces_kinds (untagged unit: all)",
+    "inputs": "NFR design artifacts, domain design components.md, functional design",
+    "outputs": "infrastructure-specification.md (deployment + services + shared, tabular), monitoring-design.md (tabular), cicd-pipeline.md (under this stage's per-unit record dir, engine-resolved); per-kind applicability via produces_kinds (a spec unit owes none)",
     "rules_in_context": [
       {
         "path": "aidlc/spaces/default/memory/org.md",
@@ -2006,7 +1998,7 @@
         "required": false
       },
       {
-        "artifact": "deployment-architecture",
+        "artifact": "infrastructure-specification",
         "required": false
       },
       {
@@ -2275,7 +2267,7 @@
         "required": true
       },
       {
-        "artifact": "deployment-architecture",
+        "artifact": "infrastructure-specification",
         "required": true
       },
       {
@@ -2351,11 +2343,7 @@
     ],
     "consumes": [
       {
-        "artifact": "deployment-architecture",
-        "required": true
-      },
-      {
-        "artifact": "infrastructure-services",
+        "artifact": "infrastructure-specification",
         "required": true
       },
       {
@@ -2531,7 +2519,7 @@
         "required": true
       },
       {
-        "artifact": "infrastructure-services",
+        "artifact": "infrastructure-specification",
         "required": true
       }
     ],
@@ -2617,7 +2605,7 @@
         "required": true
       },
       {
-        "artifact": "deployment-architecture",
+        "artifact": "infrastructure-specification",
         "required": true
       }
     ],

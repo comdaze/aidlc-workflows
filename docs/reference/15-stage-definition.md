@@ -257,8 +257,7 @@ COVERED for a unit only when every `produces[]` artifact exists on disk under
 that unit's record dir (the per-unit coverage check in
 `aidlc-orchestrate.ts`). Some artifacts are genuinely conditional on the unit
 - `functional-design` writes `frontend-components` only when the unit has a
-UI; `infrastructure-design` writes `shared-infrastructure` only when units
-share infrastructure. Listing those under `produces:` forced a backend-only
+UI. Listing that under `produces:` forced a backend-only
 unit to write an N/A stub just to satisfy coverage, and left the stage gate
 unreachable until it did. Moving them to `optional_produces:` exempts them:
 

@@ -86,11 +86,9 @@ const PRODUCES: Record<string, string[]> = {
     "logical-components",
   ],
   "infrastructure-design": [
-    "deployment-architecture",
-    "infrastructure-services",
+    "infrastructure-specification",
     "monitoring-design",
     "cicd-pipeline",
-    "shared-infrastructure",
   ],
 };
 // The four inline design stages, in graph order (the walk's inner list).

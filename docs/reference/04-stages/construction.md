@@ -462,7 +462,7 @@ by mapping where NFR patterns apply at the component level.
 | support_agents    | aidlc-devsecops-agent, aidlc-compliance-agent                                                           |
 | mode              | inline                                                                                            |
 | Inputs            | NFR design artifacts, domain design, functional design                                       |
-| Outputs           | `<record>/construction/{unit-name}/infrastructure-design/` -- deployment-architecture.md, infrastructure-services.md, monitoring-design.md, cicd-pipeline.md, CONDITIONAL: shared-infrastructure.md |
+| Outputs           | `<record>/construction/{unit-name}/infrastructure-design/` -- infrastructure-specification.md (deployment + services + CONDITIONAL shared), monitoring-design.md, cicd-pipeline.md |
 
 ### Purpose
 
@@ -522,21 +522,20 @@ aidlc-compliance-agent checking data residency and regulatory constraints.
      management
 
 6. **Generate Artifacts** -- Generate the following in
-   `<record>/construction/{unit-name}/infrastructure-design/`:
-   - **deployment-architecture.md**: Compute resources, networking, storage,
-     environment definitions, infrastructure-as-code approach, resource sizing
-   - **infrastructure-services.md**: Database design, caching layer, messaging
-     infrastructure, external service integrations, service discovery
-   - **monitoring-design.md**: Metrics and KPIs, log strategy, tracing
-     configuration, alert definitions, dashboard specifications, incident
-     response
-   - **cicd-pipeline.md**: Pipeline stages, build configuration, test
+   `<record>/construction/{unit-name}/infrastructure-design/`. Keep the content
+   **tabular** (deployment, services, shared, and monitoring are tables):
+   - **infrastructure-specification.md**: the core infra design — a
+     **Deployment** table (compute, networking, storage, environments, IaC,
+     sizing), an **Infrastructure Services** table (databases, caches,
+     messaging, integrations, service discovery), and a CONDITIONAL **Shared
+     Infrastructure** table (shared resources across units + ownership/access
+     boundaries), all in one document
+   - **monitoring-design.md**: observability design, tabular — metrics/KPIs,
+     alerts, SLIs/SLOs, plus log-aggregation and tracing configuration and
+     dashboard specifications
+   - **cicd-pipeline.md**: pipeline stages, build configuration, test
      automation integration, deployment strategy (blue-green, canary, rolling),
-     rollback procedures, secrets management in CI/CD
-   - **shared-infrastructure.md** (CONDITIONAL -- produce when multiple units
-     share infrastructure resources): Shared databases, shared caches, shared
-     message queues, shared networking, cross-unit service discovery, resource
-     ownership and access boundaries
+     rollback procedures, environment promotion, secrets management in CI/CD
 
 7. **Prepare Completion** -- Verify the unit's Infrastructure Design
    artifacts. Do not edit state; report the gate outcome through
@@ -546,26 +545,26 @@ aidlc-compliance-agent checking data residency and regulatory constraints.
 
 ### Outputs
 
-| Artifact                   | Description                                                               |
-|----------------------------|---------------------------------------------------------------------------|
-| deployment-architecture.md | Compute, networking, storage, environment definitions, IaC approach       |
-| infrastructure-services.md | Databases, caching, messaging, external integrations, service discovery   |
-| monitoring-design.md       | Metrics, logs, tracing, alerts, dashboards, SLI/SLO tracking             |
-| cicd-pipeline.md           | Pipeline stages, build config, deployment strategy, rollback procedures   |
-| shared-infrastructure.md   | (CONDITIONAL) Shared resources across units, ownership boundaries         |
+| Artifact                       | Description                                                               |
+|--------------------------------|---------------------------------------------------------------------------|
+| infrastructure-specification.md | Deployment (compute/networking/storage/environments/IaC), infrastructure services, and CONDITIONAL shared resources — tabular |
+| monitoring-design.md           | Metrics, alerts, SLIs/SLOs, logs, tracing, dashboards — tabular where possible |
+| cicd-pipeline.md               | Pipeline stages, build config, deployment strategy, rollback procedures   |
 
 ### Approval Gate
 
 Strictly 2-option: Approve / Request Changes.
 
-### Notes -- Infrastructure Design Expansion
+### Notes -- Infrastructure Design Consolidation
 
-This stage produces **5 artifact files**, expanded from the upstream reference
-which has 2-3 files. This is a deliberate deviation documented in SKILL.md
-("Deliberate Deviations from Reference"). The additions of monitoring-design.md
-and cicd-pipeline.md as dedicated artifacts improve operational visibility.
-shared-infrastructure.md is produced conditionally only when multiple units
-share infrastructure resources.
+This stage produces **3 artifact files**. Deployment, infrastructure services,
+and shared resources were consolidated into a single tabular
+`infrastructure-specification.md` (closer to the upstream reference's single
+infra doc), while `monitoring-design.md` and `cicd-pipeline.md` stay dedicated
+artifacts because downstream Operation stages consume them independently
+(observability-setup reads monitoring; deployment-pipeline reads the CI/CD
+design). Shared infrastructure is a CONDITIONAL section of the specification,
+present only when multiple units share resources.
 
 ---
 
@@ -1063,6 +1062,7 @@ through a phased construction flow:
 - NFR Requirements: 5 files (expanded from 2 in reference)
 - NFR Design: 5 files including logical-components.md (expanded from 2 in
   reference)
-- Infrastructure Design: 5 files including monitoring-design.md and
-  cicd-pipeline.md (expanded from 2-3 in reference)
+- Infrastructure Design: 3 files — a consolidated infrastructure-specification.md
+  (deployment + services + shared) plus dedicated monitoring-design.md and
+  cicd-pipeline.md
 - Plan/question file co-location with stage artifacts

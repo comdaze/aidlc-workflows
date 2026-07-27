@@ -24,7 +24,7 @@ consumes:
     required: false
   - artifact: security-design
     required: false
-  - artifact: deployment-architecture
+  - artifact: infrastructure-specification
     required: false
   - artifact: unit-of-work
     required: true

@@ -783,7 +783,7 @@ describe("t66 validateScope (in-process)", () => {
         "deployment-execution->environment-inventory",
         "deployment-pipeline->ci-config",
         "deployment-pipeline->cicd-pipeline",
-        "deployment-pipeline->deployment-architecture",
+        "deployment-pipeline->infrastructure-specification",
         "deployment-pipeline->quality-gates",
         "nfr-requirements->functional-spec",
         "nfr-requirements->rules",
@@ -1013,7 +1013,7 @@ describe("t66 designer export (spawnSync CLI-boundary)", () => {
     };
     expect(out.stages.length).toBe(33);
     expect(Object.keys(out.scopes).length).toBe(9);
-    expect(out.artifacts.length).toBe(119);
+    expect(out.artifacts.length).toBe(117);
     expect(out.agents.length).toBe(14);
   });
 
