@@ -598,7 +598,7 @@ The following intentional differences from the upstream `aidlc-workflows/` refer
 | 2 | Plan/question file co-location | Flat centralized pattern | Co-located with stage artifacts | Improves discoverability |
 | 3 | Infrastructure Design expansion | 2-3 files | 5 files (+monitoring-design.md, +cicd-pipeline.md) | Operational visibility |
 | 4 | Inline questions | All questions in files | `AskUserQuestion` for 1-3 simple options | Claude Code's structured UI |
-| 5 | Architecture Decision Records | Not present | `decisions.md` in Domain Design | Architectural traceability |
+| 5 | Architecture Decision Records | Not present | Rationale/Alternatives-Rejected captured in `components.md` (Domain Design) | Architectural traceability |
 | 6 | Welcome message | Longer Unicode-based | Shorter, ASCII-safe; rendered via `companyAnnouncements` in `settings.json` (not a stage) | Fixes reference's own ascii-diagram-standards violation |
 | 7 | RE always-rerun policy | Uses cached artifacts | Always re-executes for brownfield | Ensures current codebase analysis |
 | 8 | Session resume | File-based `[Answer]:` tag | Uses `AskUserQuestion` | More natural in Claude Code |

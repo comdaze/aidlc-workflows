@@ -2,7 +2,7 @@
 slug: units-generation
 phase: inception
 execution: ALWAYS
-condition: Always executes when in scope. Produces the dependency DAG that Stage 2.8 Delivery Planning consumes for Bolt sequencing. In the compiled scope grid, 2.7 and 2.8 travel together — both EXECUTE or both SKIP per scope.
+condition: Always executes when in scope. Produces the dependency DAG that Stage 2.9 Delivery Planning consumes for Bolt sequencing. In the compiled scope grid, 2.7 (Units Generation) and 2.9 (Delivery Planning) travel together — both EXECUTE or both SKIP per scope.
 lead_agent: aidlc-architect-agent
 support_agents:
   - aidlc-delivery-agent
@@ -38,7 +38,7 @@ outputs: unit-of-work.md, unit-of-work-dependency.md, unit-of-work-story-map.md 
 
 MANDATORY: Follow stage-protocol.md for approval gates, question format, and completion messages.
 
-NOTE: **Stage 2.7 produces the dependency DAG (topology). Stage 2.8 chooses the economic path through it (Bolt sequence).** 2.7 MUST NOT recommend an implementation order or identify a critical path — those are 2.8's economic-sequencing decisions. This stage describes what can depend on what; 2.8 decides what to ship first and why.
+NOTE: **Stage 2.7 produces the dependency DAG (topology). Stage 2.9 Delivery Planning chooses the economic path through it (Bolt sequence).** 2.7 MUST NOT recommend an implementation order or identify a critical path — those are 2.9's economic-sequencing decisions. This stage describes what can depend on what; 2.9 decides what to ship first and why.
 
 ---
 
@@ -66,7 +66,7 @@ Create `<record>/inception/units-generation/units-generation-questions.md` with 
 - Integration points and contracts between units (APIs, shared data, events)
 - Deployment model (monolithic deploy, independent deploy, hybrid)
 
-NOTE: Do NOT ask about implementation order priorities (value-first, risk-first, walking-skeleton-first). Those are economic-sequencing decisions that belong to Stage 2.8 Delivery Planning.
+NOTE: Do NOT ask about implementation order priorities (value-first, risk-first, walking-skeleton-first). Those are economic-sequencing decisions that belong to Stage 2.9 Delivery Planning.
 
 ### Step 4: Collect and Analyze Answers
 
@@ -115,7 +115,7 @@ units:
     depends_on: [<unit-name>]
 ```
 
-NOTE: This artifact describes topology only. It does NOT pick a single "recommended build order" or identify a critical path — those are economic decisions made in 2.8 using this DAG as input.
+NOTE: This artifact describes topology only. It does NOT pick a single "recommended build order" or identify a critical path — those are economic decisions made in 2.9 (Delivery Planning) using this DAG as input.
 
 **unit-of-work-story-map.md:**
 - Each user story mapped to its implementing unit(s)

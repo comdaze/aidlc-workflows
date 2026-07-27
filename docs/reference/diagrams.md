@@ -118,7 +118,8 @@ flowchart TD
     S24["2.5 Refined Mockups\n(aidlc-design-agent)"]
     S25["2.6 Domain Design\n(aidlc-architect-agent)"]
     S26["2.7 Units Generation\n(aidlc-architect-agent)"]
-    S27["2.8 Delivery Planning\n(aidlc-delivery-agent)"]
+    S28["2.8 Contract Design\n(aidlc-architect-agent)"]
+    S27["2.9 Delivery Planning\n(aidlc-delivery-agent)"]
     VG2{{"Verification Gate:\nInception --> Construction"}}
 
     BF_CHECK{"Brownfield?\n(from Initialization 0.3)"}
@@ -143,7 +144,9 @@ flowchart TD
     S24 -.->|CONDITIONAL| S25
     S25 -.->|CONDITIONAL| S26
     S25 ==>|ALWAYS| S27
+    S26 -.->|"if multi-unit"| S28
     S26 -.->|CONDITIONAL| S27
+    S28 -.->|CONDITIONAL| S27
     S27 ==>|ALWAYS| VG2
 
     style S21 fill:#bbdefb,stroke:#1565c0

@@ -19,12 +19,14 @@
 //     (doctor consumes them) and for future scheduling; they do not
 //     gate runtime iteration today.
 //
-// Compile is the YAML -> JSON transform. It bootstraps number + name
-// from today's stage-graph.json so YAML stays the authored source of
-// truth for everything else while computed fields stay computed. number
-// and name are NOT authorable frontmatter keys (the stage schema rejects
-// them as unknown), they are derived, then pinned in the JSON so they
-// stay byte-stable across recompiles.
+// Compile is the YAML -> JSON transform. `number` and `name` ARE optional
+// authorable frontmatter keys (both are shape-checked in aidlc-stage-schema.ts,
+// not rejected). Precedence per stage is: authored frontmatter `number:`/`name:`
+// wins, else the existing stage-graph.json pin, else auto-seed (next free index
+// in the phase / title-cased slug). Authoring the field lets a renamed or newly
+// inserted stage control its own display number without a manual JSON edit; an
+// un-authored stage still bootstraps from today's JSON so numbers stay
+// byte-stable across recompiles.
 //
 // A NEW stage slug (a .md on disk with no row in stage-graph.json yet) is
 // auto-seeded on compile rather than rejected: its number is the next free
@@ -1590,6 +1592,11 @@ export function compileStageGraph(): {
   const stages: GraphStage[] = [];
   // Track slug-to-first-file so duplicate-slug errors name both files.
   const slugToFile = new Map<string, string>();
+  // Track number-to-first-file so a duplicate stage number (two frontmatter
+  // pins, or a frontmatter pin colliding with a JSON pin / auto-seed) fails
+  // loud instead of silently emitting two nodes at the same number (which
+  // findStageByNumber and the numeric sort cannot disambiguate).
+  const numberToFile = new Map<string, string>();
 
   // Known agent slugs (the `name:` field of each .claude/agents/*.md), passed
   // to validateStageFrontmatter so a stage referencing a lead_agent or
@@ -1696,6 +1703,29 @@ export function compileStageGraph(): {
         name = name ?? titleCaseSlug(slug);
       }
 
+      // Record the consumed index for THIS phase regardless of which path set
+      // `number` (frontmatter pin, JSON pin, or auto-seed), so a later
+      // auto-seeded stage in the same phase starts after it rather than
+      // colliding with a frontmatter/JSON-pinned slot.
+      {
+        const [np, ni] = number.split(".").map((n) => parseInt(n, 10));
+        if (Number.isFinite(np) && Number.isFinite(ni)) {
+          maxIndexByPhasePrefix.set(np, Math.max(maxIndexByPhasePrefix.get(np) ?? 0, ni));
+        }
+      }
+
+      // Duplicate-number guard: numbers must be globally unique. Two stages at
+      // the same number produce a corrupt graph (findStageByNumber returns only
+      // the first; numeric sort order is non-deterministic between them).
+      const previousNumberFile = numberToFile.get(number);
+      if (previousNumberFile) {
+        throw new Error(
+          `Duplicate stage number "${number}" in ${filePath} — already claimed ` +
+            `in ${previousNumberFile}. Renumber one of them (frontmatter \`number:\`).`
+        );
+      }
+      numberToFile.set(number, filePath);
+
       stages.push(buildGraphStage(validation.data, phase, number, name));
     }
   }
@@ -1746,8 +1776,9 @@ export function compileStageGraph(): {
         throw new Error(
           `Compile invariant violated: stage "${stage.slug}" (${stage.number}) ` +
             `requires "${dep}" (${depNum}) — dependency must be lower-numbered. ` +
-            `Fix: either renumber in stage-graph.json to match the dependency ` +
-            `direction, or remove the offending requires_stage edge.`
+            `Fix: renumber via the authored \`number:\` frontmatter on one of the ` +
+            `two stage .md files (frontmatter wins over the stage-graph.json pin), ` +
+            `or remove the offending requires_stage edge.`
         );
       }
     }

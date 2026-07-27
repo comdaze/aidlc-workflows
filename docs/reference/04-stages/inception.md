@@ -877,9 +877,9 @@ Special 3-option gate:
 
 - Skip condition: changes are modifications to existing components only, with
   no new components or services needed.
-- The `decisions.md` artifact (ADRs) is a deliberate deviation from the
-  upstream reference. Each ADR includes Context, Decision, Consequences, and
-  Alternatives Considered, plus trade-off analysis and reversibility assessment.
+- Boundary rationale (and any Alternatives Rejected) is captured in the
+  Rationale section of `components.md` — a deliberate deviation from the
+  upstream reference — rather than a separate ADR artifact.
 - The design artifacts produced here are the primary input for Units Generation
   (2.7) and directly inform Construction stages (Functional Design 3.1, Code
   Generation 3.5).
@@ -963,7 +963,7 @@ actual unit artifacts.
 
    NOTE: Do NOT ask about implementation order priorities (value-first,
    risk-first, walking-skeleton-first). Those are economic-sequencing
-   decisions that belong to Stage 2.8 Delivery Planning.
+   decisions that belong to Stage 2.9 Delivery Planning.
 
 4. **Collect and Analyze Answers** -- Collect answers following
    stage-protocol.md section 3 question flow. MANDATORY ambiguity analysis:

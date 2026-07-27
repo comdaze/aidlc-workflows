@@ -1214,7 +1214,7 @@
     "name": "Units Generation",
     "phase": "inception",
     "execution": "ALWAYS",
-    "condition": "Always executes when in scope. Produces the dependency DAG that Stage 2.8 Delivery Planning consumes for Bolt sequencing. In the compiled scope grid, 2.7 and 2.8 travel together — both EXECUTE or both SKIP per scope.",
+    "condition": "Always executes when in scope. Produces the dependency DAG that Stage 2.9 Delivery Planning consumes for Bolt sequencing. In the compiled scope grid, 2.7 (Units Generation) and 2.9 (Delivery Planning) travel together — both EXECUTE or both SKIP per scope.",
     "lead_agent": "aidlc-architect-agent",
     "support_agents": [
       "aidlc-delivery-agent"
