@@ -1,6 +1,6 @@
 # Hooks and Tools
 
-This chapter documents the hook system architecture, all thirteen hook scripts, the audit event taxonomy, CLI tool configuration, and the deterministic utility tool.
+This chapter documents the hook system architecture, all fourteen hook scripts, the audit event taxonomy, CLI tool configuration, and the deterministic utility tool.
 
 > **Path convention.** State, audit, and artifacts live under the active intent's **record dir** — `aidlc/spaces/<space>/intents/<YYMMDD>-<label>/`, written `<record>/` below (a compact UTC date prefix plus a short kebab-case label so record dirs sort chronologically; the canonical id is the UUIDv7 in the `intents.json` registry row). The audit trail is a directory of per-clone shards under `<record>/audit/`, not a single file.
 
@@ -8,15 +8,16 @@ This chapter documents the hook system architecture, all thirteen hook scripts, 
 
 ## Hook System Architecture
 
-This implementation uses thirteen hook scripts in `.claude/hooks/`. All thirteen are TypeScript (run via `bun`). All thirteen are **project-wide** — registered in `settings.json` (the statusline via the top-level `statusLine` key, the other twelve via the `hooks` block), they fire regardless of which skill is active. They were previously split (six declared in `aidlc/SKILL.md` frontmatter as skill-scoped, the rest project-wide); v0.6.0 moved the skill-scoped six into `settings.json` so every entry point — the orchestrator, each packaged scope/stage runner, and any hand-written customer runner — inherits the deterministic spine with no per-runner `hooks:` block.
+This implementation uses fourteen hook scripts in `.claude/hooks/`. All fourteen are TypeScript (run via `bun`). All fourteen are **project-wide** — registered in `settings.json` (the statusline via the top-level `statusLine` key, the other thirteen via the `hooks` block), they fire regardless of which skill is active. They were previously split (six declared in `aidlc/SKILL.md` frontmatter as skill-scoped, the rest project-wide); v0.6.0 moved the skill-scoped six into `settings.json` so every entry point — the orchestrator, each packaged scope/stage runner, and any hand-written customer runner — inherits the deterministic spine with no per-runner `hooks:` block.
 
-Ten of the thirteen are **non-blocking**. Three are **flow-altering**: the `Stop` hook keeps the forwarding loop running, the reviewer-scope hook refuses sibling-unit reviewer access, and the state-transition guard refuses direct lifecycle calls that bypass `aidlc-orchestrate.ts report`.
+Ten of the fourteen are **non-blocking**. Four are **flow-altering**: the `Stop` hook keeps the forwarding loop running, the reviewer-scope hook refuses sibling-unit reviewer access, the state-transition guard refuses direct lifecycle calls that bypass `aidlc-orchestrate.ts report`, and the plan-approval guard refuses a code-generation developer dispatch before the human approves the plan.
 
 ```
 .claude/hooks/
 +-- mint-presence.ts     # UserPromptSubmit + PostToolUse AskUserQuestion (project-wide, settings.json, TypeScript)
 +-- state-transition-guard.ts # PreToolUse Bash (project-wide, settings.json, TypeScript, flow-altering)
 +-- reviewer-scope.ts    # PreToolUse file/search/shell tools (project-wide, settings.json, TypeScript, flow-altering)
++-- plan-approval-guard.ts # PreToolUse Task (project-wide, settings.json, TypeScript, flow-altering)
 +-- audit-logger.ts      # PostToolUse Write|Edit (project-wide, settings.json, TypeScript)
 +-- sensor-fire.ts       # PostToolUse Write|Edit (project-wide, settings.json, TypeScript)
 +-- sync-statusline.ts   # PostToolUse TaskUpdate (project-wide, settings.json, TypeScript)
@@ -36,6 +37,7 @@ Ten of the thirteen are **non-blocking**. Three are **flow-altering**: the `Stop
 | `mint-presence.ts` | UserPromptSubmit + PostToolUse | Project-wide (settings.json) | (empty) / `AskUserQuestion` | Record a `HUMAN_TURN` event on every real human prompt and on every answered `AskUserQuestion` widget (gate approvals and interview answers are widget clicks, not typed prompts); the approval/interview gate checks the ledger and requires one since the last gate resolution so a model under autopilot cannot fabricate an approval with no human having acted |
 | `state-transition-guard.ts` | PreToolUse | Project-wide (settings.json) | `Bash` | **Flow-altering.** Refuse direct `aidlc-state.ts` lifecycle verbs and redirect the conductor to `aidlc-orchestrate.ts report`; read-only and specialized recovery/configuration verbs remain available |
 | `reviewer-scope.ts` | PreToolUse | Project-wide (settings.json) | `Read\|Edit\|Write\|Glob\|Grep\|Bash` | **Flow-altering.** Enforce the per-unit reviewer read-scope bound (stage-protocol §12a) deterministically: while the conductor's reviewer dispatch record (`<record>/.aidlc-reviewer-dispatch.json`) is fresh, the dispatched reviewer's tool calls that reach into sibling units' `construction/` paths — file reads/writes and grep/glob/shell patterns spanning siblings — are refused (exit 2 + a redirecting stderr reason) unless the target is on the record's exempt list. Each refusal emits `REVIEWER_SCOPE_BLOCKED`. Fail-open on every ambiguity; `AIDLC_DISABLE_REVIEWER_SCOPE_HOOK=1` disables enforcement |
+| `plan-approval-guard.ts` | PreToolUse | Project-wide (settings.json) | `Task` | **Flow-altering.** Enforce code-generation's plan-before-generation ordering (stage Steps 2-4) deterministically: while the workflow's Current Stage is code-generation (and Construction autonomy is not granted), a Task dispatch targeting `aidlc-developer-agent` is refused (exit 2 + a redirecting stderr reason) unless a unit named in the dispatch prompt (any unit, when none is named) has `code-generation-plan.md` on disk AND an answered Plan Approval tag in `code-generation-questions.md`. Each refusal emits `PLAN_APPROVAL_BLOCKED`. Fail-open on every ambiguity; `AIDLC_DISABLE_PLAN_APPROVAL_GUARD=1` disables enforcement |
 | `audit-logger.ts` | PostToolUse | Project-wide (settings.json) | `Write\|Edit` | Auto-log artifact writes to the `audit/` shards |
 | `sensor-fire.ts` | PostToolUse | Project-wide (settings.json) | `Write\|Edit` | Fire the active stage's resolved Sensors on matching writes (advisory; never blocks) |
 | `sync-statusline.ts` | PostToolUse | Project-wide (settings.json) | `TaskUpdate` | Auto-sync state file on stage task activation |
@@ -49,13 +51,13 @@ Ten of the thirteen are **non-blocking**. Three are **flow-altering**: the `Stop
 
 ### Shared Characteristics
 
-All thirteen TypeScript hooks:
+All fourteen TypeScript hooks:
 
 - Written in TypeScript, run via `bun`
 - Do not need executable permissions — work identically on macOS, Linux, and native Windows PowerShell
 - Receive JSON on stdin from Claude Code
 - Use native JSON parsing (no `jq` dependency)
-- Exit with code 0 on success or when skipped (the `Stop` hook also exits 0 when it blocks — the block is signalled by a `{"decision":"block"}` JSON object on stdout; the two PreToolUse guards signal refusal with exit 2 + the reason on stderr)
+- Exit with code 0 on success or when skipped (the `Stop` hook also exits 0 when it blocks — the block is signalled by a `{"decision":"block"}` JSON object on stdout; the three PreToolUse guards signal refusal with exit 2 + the reason on stderr)
 - Resolve `$CLAUDE_PROJECT_DIR` with multiple fallback methods
 - Share locking and utility functions from `lib.ts`
 
@@ -223,7 +225,7 @@ Workspace detection (0.2) used to be a subagent; it now runs deterministically i
 **Trigger:** When the conductor tries to end its turn (matcher: empty = always, while `/aidlc` is active)
 **Purpose:** Enforce the interactive forwarding loop — keep it running until the engine reports the workflow is `done`
 
-This is one of the framework's three flow-altering hooks, alongside the two PreToolUse guards below. It may return `{"decision":"block"}` to stop the turn from ending; the other ten hooks observe and exit 0. On the gated, conversational path the conductor (the LLM) holds the loop because only it can ask the human a question — so if it forgets to consult the engine, the workflow drifts. This hook removes that dependency on the LLM's diligence: the loop is enforced by the harness.
+This is one of the framework's four flow-altering hooks, alongside the three PreToolUse guards below. It may return `{"decision":"block"}` to stop the turn from ending; the other ten hooks observe and exit 0. On the gated, conversational path the conductor (the LLM) holds the loop because only it can ask the human a question — so if it forgets to consult the engine, the workflow drifts. This hook removes that dependency on the LLM's diligence: the loop is enforced by the harness.
 
 **Processing steps:**
 
@@ -276,7 +278,7 @@ cannot expose the shell command.
 **Trigger:** Before file/search/shell tool calls (`Read`, `NotebookRead`, `Edit`, `MultiEdit`, `Write`, `NotebookEdit`, `LS`, `Glob`, `Grep`, or `Bash`; matcher: `"Read|NotebookRead|Edit|MultiEdit|Write|NotebookEdit|LS|Glob|Grep|Bash"`)
 **Purpose:** Enforce the per-unit reviewer read-scope bound (stage-protocol §12a) deterministically
 
-This is one of the framework's three flow-altering hooks and one of its two `PreToolUse` guards. The §12a prose bound says a reviewer dispatched for one unit must not read sibling units' `construction/<other-unit>/` content through any tool — field transcripts showed a diligent reviewer bypassing the prose with recursive greps carrying cross-unit globs (`construction/*/*/*.md`), growing per-unit review cost superlinearly with unit count. Per the framework's layering (determinism belongs in tools and hooks), this hook makes the bound self-enforcing.
+This is one of the framework's four flow-altering hooks and one of its three `PreToolUse` guards. The §12a prose bound says a reviewer dispatched for one unit must not read sibling units' `construction/<other-unit>/` content through any tool — field transcripts showed a diligent reviewer bypassing the prose with recursive greps carrying cross-unit globs (`construction/*/*/*.md`), growing per-unit review cost superlinearly with unit count. Per the framework's layering (determinism belongs in tools and hooks), this hook makes the bound self-enforcing.
 
 **How it learns the dispatch.** The conductor writes `<record>/.aidlc-reviewer-dispatch.json` at §12a step 1 (per-unit stages only) — `{reviewer, stage, unit, exempt[]}`, where `exempt` carries the resolved `consumes` contract paths, the stage file, the Q&A file, and (when the current unit's design explicitly names an integration point) that one owning sibling file — and deletes it at step 3 when the verdict is read. The record is the enforcement window; a record older than 6 hours is an orphan from a crashed review, ignored and janitored (the compose-marker staleness discipline).
 
@@ -285,6 +287,20 @@ This is one of the framework's three flow-altering hooks and one of its two `Pre
 **Decision.** The matcher (`evaluateReviewerScope`, an exported pure function pinned by `t220`) scans path fields and command/pattern text for `construction/<seg>` tokens: the dispatched unit passes, a wildcard or bare sweep root blocks, and a concrete sibling blocks unless the full token exactly matches an exempt entry's `construction/` suffix. A grep of the current unit, the shared inception contracts, and validation-tool runs are never touched. Blocks emit a `REVIEWER_SCOPE_BLOCKED` audit row (Tool, Target, Stage, Unit) and signal via **exit 2 + a redirecting stderr reason** — the harness PreToolUse reject contract — that names the scope and points the reviewer back to the passed contracts.
 
 **Fail-open everywhere.** No record, a stale or malformed record, a non-reviewer agent, an unknown tool, malformed stdin, or any internal error allows the call; a reviewer-agent sighting with no dispatch record records an advisory drop for `--doctor` (the conductor forgot the step-1 write). The deterministic off-switch `AIDLC_DISABLE_REVIEWER_SCOPE_HOOK=1` disables enforcement entirely.
+
+### Plan-Approval Guard Hook
+
+**Source:** `.claude/hooks/aidlc-plan-approval-guard.ts`
+**Trigger:** Before subagent dispatches (matcher: `"Task"`)
+**Purpose:** Enforce Code Generation's plan-before-generation ordering (stage Steps 2-4) deterministically
+
+This is one of the framework's four flow-altering hooks and one of its three `PreToolUse` guards. The stage prose says generation never begins before the human answers "Approve Plan" - a field report showed a conductor generating the code first and backfilling `code-generation-plan.md` beside `code-summary.md`, turning the plan into a retroactive summary. The stage-completion artifact guard cannot catch that inversion (it fires at completion, when the backfilled plan already exists), so this hook refuses the dispatch itself.
+
+**Decision.** The guard acts only when the workflow's `Current Stage` is code-generation, Construction autonomy is not `autonomous`, and the tool call is a `Task` dispatch whose `subagent_type` is `aidlc-developer-agent`. It resolves the workflow's known units (the compiled bolt DAG plus the on-disk `construction/<unit>/` dirs), then requires that a unit named in the dispatch prompt - any unit, when the prompt names none - has BOTH `code-generation-plan.md` on disk AND an answered Plan Approval `[Answer]:` tag in `code-generation-questions.md` (the Stop hook's tag grammar: blank or underscores-only is pending, so a tag reset by "Request Changes" keeps blocking until the human re-approves). The decision (`evaluatePlanApprovalDispatch`, an exported pure function pinned by `t248`) blocks with **exit 2 + a redirecting stderr reason** naming the missing evidence and the stage steps that produce it, and emits a `PLAN_APPROVAL_BLOCKED` audit row (Tool, Target, Stage, Unit).
+
+**Why autonomy is exempt.** Under an autonomous Construction swarm the autonomy grant is the human's standing approval for the batch, the swarm referee (`aidlc-swarm.ts finalize`) owns per-unit verification, and a deterministic block would deadlock a granted swarm on a question no one is present to answer.
+
+**Fail-open everywhere.** No state file, another stage, another agent or tool, malformed stdin, or any internal error allows the call. The deterministic off-switch `AIDLC_DISABLE_PLAN_APPROVAL_GUARD=1` disables enforcement entirely. On Kiro CLI the conductor agent registers the guard on its `subagent` matcher (the adapter translates the crew schema); on Codex it rides the `spawn_agent` PreToolUse seam; on opencode the plugin consults it before `task` dispatches; Kiro IDE documents the bound as prose-only, like its other guards.
 
 ---
 
@@ -372,6 +388,7 @@ The audit trail (the intent's `audit/` shards) uses the event taxonomy defined i
 | **Artifact** | 3 | `ARTIFACT_CREATED`, `ARTIFACT_UPDATED`, `ARTIFACT_REUSED` | audit-logger hook, `aidlc-state.ts reuse-artifact` |
 | **Subagent** | 1 | `SUBAGENT_COMPLETED` | log-subagent hook |
 | **Reviewer scope** | 1 | `REVIEWER_SCOPE_BLOCKED` | reviewer-scope hook |
+| **Plan approval** | 1 | `PLAN_APPROVAL_BLOCKED` | plan-approval-guard hook |
 | **Utility** | 1 | `HEALTH_CHECKED` | `aidlc-utility.ts doctor` |
 | **Error/Recovery** | 2 | `ERROR_LOGGED`, `RECOVERY_COMPLETED` | `lib.ts emitError`, `aidlc-state.ts acknowledge-compaction` |
 | **Construction Bolt** | 4 | `BOLT_STARTED`, `BOLT_COMPLETED`, `BOLT_FAILED`, `AUTONOMY_MODE_SET` | `aidlc-bolt.ts` |
@@ -413,6 +430,7 @@ A stage reported as skipped emits `STAGE_SKIPPED` instead of
 | `audit-logger.ts` | `ARTIFACT_CREATED` / `ARTIFACT_UPDATED` | Every Write/Edit to the intent's record dir (except the `audit/` shards) |
 | `log-subagent.ts` | `SUBAGENT_COMPLETED` | Any subagent stop |
 | `reviewer-scope.ts` | `REVIEWER_SCOPE_BLOCKED` | A per-unit reviewer's tool call refused for sibling-unit access (PreToolUse) |
+| `plan-approval-guard.ts` | `PLAN_APPROVAL_BLOCKED` | A code-generation developer dispatch refused before the plan is approved (PreToolUse) |
 | `session-start.ts` | `SESSION_STARTED` / `SESSION_RESUMED` | Per Claude Code SessionStart hook input `source` field |
 | `session-end.ts` | `SESSION_ENDED` | Claude Code SessionEnd hook |
 | `validate-state.ts` | `SESSION_COMPACTED` | Claude Code PreCompact hook |

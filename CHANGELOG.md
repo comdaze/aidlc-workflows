@@ -1,6 +1,15 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [2.5.15] - 2026-07-27
+
+Code Generation's plan-before-generation ordering is now enforced deterministically. A field report showed the conductor generating code first and backfilling `code-generation-plan.md` beside `code-summary.md`, turning the plan into a retroactive summary; the new plan-approval PreToolUse guard refuses the developer-agent dispatch until the unit's plan is on disk and the human has answered "Approve Plan". **Upgrade:** re-copy your `dist/<harness>/` shell into the project so the new hook and its registrations are installed.
+
+* New framework hook `aidlc-plan-approval-guard.ts` (the 14th): while Current Stage is code-generation, a Task/subagent dispatch targeting `aidlc-developer-agent` is refused with a redirecting reason unless a unit named in the dispatch prompt (any unit, when none is named) has `code-generation-plan.md` on disk and an answered Plan Approval `[Answer]:` tag in `code-generation-questions.md`. A blank or underscores-only tag (including one reset by "Request Changes") keeps blocking until the human re-approves.
+* Each refusal emits a `PLAN_APPROVAL_BLOCKED` audit event (the 75th event type) naming the tool, target agent, and mentioned unit(s).
+* Wired on Claude Code (settings.json `Task` matcher), Kiro CLI (conductor agent `subagent` matcher via the adapter), Codex (hooks.json PreToolUse target), and opencode (plugin `tool.execute.before` on `task`). Kiro IDE documents the bound as prose-only, matching its other guards.
+* Carve-outs: autonomous Construction swarms are exempt (the autonomy grant is the standing approval and the swarm referee owns per-unit verification); `AIDLC_DISABLE_PLAN_APPROVAL_GUARD=1` disables enforcement entirely. The guard fails open on every ambiguity (no state file, another stage, another agent, malformed payloads).
+
 ## [2.5.11] - 2026-07-24
 
 Intent Capture now keeps generated intent and stakeholder claims grounded in the user's description, confirmed answers, workflow-selected scope, or explicitly registered memory. Unsupported content is omitted, elicited, or surfaced as a human-owned assumption instead of being presented as fact. **Upgrade:** re-copy your `dist/<harness>/` shell into the project so the updated stage, Product Lead reviewer contract, and `claim-sources` sensor are installed.

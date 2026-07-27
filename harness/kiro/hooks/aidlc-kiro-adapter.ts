@@ -494,6 +494,51 @@ if (target === "state-transition-guard") {
   process.exit(0);
 }
 
+// --- plan-approval-guard: code-generation plan-before-generation (preToolUse) ---
+//
+// Kiro's delegation surface is the `subagent` tool: tool_input carries
+// {task, stages: [{name, role, prompt_template}]} (see
+// tests/fixtures/kiro-hook-payloads/payloads.json postToolUse_subagent).
+// The shim forwards one Task-shaped payload to the core hook when any
+// pipeline stage's role is the developer agent, joining the top-level task
+// and the developer stages' prompt templates as the prompt text the core
+// hook scans for unit names. Exit 2 + stderr is Kiro's reject contract,
+// forwarded verbatim. Fail-open: a different tool, no developer role in the
+// pipeline, or an unspawnable core hook allows the call.
+if (target === "plan-approval-guard") {
+  const tool = kiro.tool_name ?? "";
+  if (tool !== "subagent") process.exit(0);
+  const ti = kiro.tool_input ?? {};
+  const stages = (ti.stages as Array<{ role?: string; prompt_template?: string }>) ?? [];
+  const devStages = stages.filter((s) => s.role === "aidlc-developer-agent");
+  if (devStages.length === 0) process.exit(0);
+  const prompt = [
+    (ti.task as string) ?? "",
+    ...devStages.map((s) => s.prompt_template ?? ""),
+  ].filter((t) => t.length > 0).join("\n");
+  const r = Bun.spawnSync(
+    [process.execPath, join(HOOKS_DIR, "aidlc-plan-approval-guard.ts")],
+    {
+      stdin: Buffer.from(
+        JSON.stringify({
+          hook_event_name: "PreToolUse",
+          tool_name: "Task",
+          tool_input: { subagent_type: "aidlc-developer-agent", prompt },
+        }),
+        "utf-8",
+      ),
+      cwd: kiro.cwd ?? process.cwd(),
+      stdout: "pipe",
+      stderr: "pipe",
+    },
+  );
+  if (r.exitCode === 2) {
+    process.stderr.write(r.stderr?.toString() ?? "");
+    process.exit(2);
+  }
+  process.exit(0);
+}
+
 // --- reviewer-scope: the per-unit reviewer read-scope bound (preToolUse) ---
 //
 // Registered inside the REVIEWER agents' own JSON configs (not the

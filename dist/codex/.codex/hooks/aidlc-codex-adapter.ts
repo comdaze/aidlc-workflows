@@ -40,7 +40,8 @@
 //   bun .codex/hooks/aidlc-codex-adapter.ts <target>
 // where <target> ∈ session-start | audit-and-sensors | state-sync |
 //                  runtime-compile | validate-state | log-subagent | stop |
-//                  mint | state-transition-guard | reviewer-scope
+//                  mint | state-transition-guard | reviewer-scope |
+//                  plan-approval-guard
 
 import { createHash } from "node:crypto";
 import {
@@ -449,6 +450,41 @@ switch (target) {
       }
     }
     persistResponse("", 0);
+    return 0;
+  }
+
+  case "plan-approval-guard": {
+    // PreToolUse: code-generation's plan-before-generation ordering. Codex's
+    // delegation surface is the spawn_agent tool; its input schema is not
+    // pinned by a fixture here, so the shim is deliberately shape-agnostic:
+    // when the serialized tool_input names the developer agent, the call is a
+    // developer dispatch and the WHOLE serialized input is forwarded as the
+    // prompt text (the core hook matches unit names on word boundaries, so
+    // JSON syntax around them is harmless). Anything else - other tools,
+    // spawns of other roles - allows instantly. The block contract is exit 2
+    // + stderr, cached like reviewer-scope so a duplicate delivery replays
+    // the block faithfully. Fail-open on any spawn failure.
+    const tool = codex.tool_name ?? "";
+    if (tool !== "spawn_agent" && tool !== "Task") {
+      persistResponse("", 0);
+      return 0;
+    }
+    const serialized = JSON.stringify(codex.tool_input ?? {});
+    if (!serialized.includes("aidlc-developer-agent")) {
+      persistResponse("", 0);
+      return 0;
+    }
+    const fwd = JSON.stringify({
+      hook_event_name: "PreToolUse",
+      tool_name: "Task",
+      tool_input: { subagent_type: "aidlc-developer-agent", prompt: serialized },
+    });
+    const r = runCoreWithStderr("aidlc-plan-approval-guard.ts", fwd);
+    persistResponse(r.stdout, r.code === 2 ? 2 : 0, r.stderr);
+    if (r.code === 2) {
+      process.stderr.write(r.stderr);
+      return 2;
+    }
     return 0;
   }
 

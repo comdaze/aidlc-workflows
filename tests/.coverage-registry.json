@@ -20,22 +20,22 @@
     "render-surface": "tui"
   },
   "counts": {
-    "total": 477,
+    "total": 479,
     "enumeratedByClass": {
       "function": 246,
-      "audit": 74,
+      "audit": 75,
       "scope": 9,
       "stage": 32,
-      "hook": 13,
+      "hook": 14,
       "subcommand": 96,
       "render-surface": 7
     },
     "coveredByClass": {
       "function": 101,
-      "audit": 33,
+      "audit": 34,
       "scope": 9,
       "stage": 9,
-      "hook": 13,
+      "hook": 14,
       "subcommand": 83,
       "render-surface": 7
     }
@@ -264,6 +264,18 @@
       "coveredBy": [
         {
           "file": "tests/e2e/t113.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "audit",
+      "unitId": "PLAN_APPROVAL_BLOCKED",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t248-plan-approval-guard.test.ts",
           "mechanism": "cli"
         }
       ],
@@ -3282,6 +3294,18 @@
       "coveredBy": [
         {
           "file": "tests/unit/t228-hook-run-exports.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "hook",
+      "unitId": "aidlc-plan-approval-guard",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t248-plan-approval-guard.test.ts",
           "mechanism": "cli"
         }
       ],

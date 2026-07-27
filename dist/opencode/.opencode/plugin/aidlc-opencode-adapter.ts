@@ -12,7 +12,7 @@
 //   ------------------------------------------------------------------------
 //   chat.message (first per session)     → aidlc-session-start.ts  (SessionStart)
 //   chat.message (every human turn)      → aidlc-mint-presence.ts  (UserPromptSubmit)
-//   tool.execute.before                  → entrypoint boundary + aidlc-reviewer-scope.ts (PreToolUse)
+//   tool.execute.before                  → entrypoint boundary + aidlc-reviewer-scope.ts + aidlc-plan-approval-guard.ts (PreToolUse)
 //   tool.execute.after write|edit|patch  → aidlc-audit-logger.ts + aidlc-sensor-fire.ts (PostToolUse Write|Edit)
 //   tool.execute.after bash              → aidlc-runtime-compile.ts (PostToolUse Bash)
 //   tool.execute.after todowrite         → aidlc-sync-statusline.ts (PostToolUse TaskUpdate)
@@ -121,6 +121,7 @@ const shippedAidlcEntrypoints: ReadonlySet<string> = new Set<string>(
     "hooks/aidlc-audit-logger.ts",
     "hooks/aidlc-log-subagent.ts",
     "hooks/aidlc-mint-presence.ts",
+    "hooks/aidlc-plan-approval-guard.ts",
     "hooks/aidlc-reviewer-scope.ts",
     "hooks/aidlc-runtime-compile.ts",
     "hooks/aidlc-sensor-fire.ts",
@@ -426,6 +427,41 @@ export default async ({
             guard.stderr.trim() ||
               "direct aidlc-state.ts lifecycle transitions are engine-owned",
           );
+        }
+      }
+
+      // Plan-approval guard, parallel to the Claude Task-matcher wiring:
+      // opencode's delegation surface is the task tool, whose args carry the
+      // target agent (subagent_type or agent) plus the prompt/description.
+      // Only developer-agent dispatches consult the core hook; it decides
+      // from workflow state whether code-generation's plan-before-generation
+      // ordering is satisfied, and a block surfaces as a thrown error (the
+      // plugin's reject contract).
+      if (input.tool === "task") {
+        const target =
+          (args.subagent_type as string) ?? (args.agent as string) ?? "";
+        if (target === "aidlc-developer-agent") {
+          const guard = await runCore(
+            "aidlc-plan-approval-guard.ts",
+            {
+              hook_event_name: "PreToolUse",
+              tool_name: "Task",
+              tool_input: {
+                subagent_type: target,
+                prompt: [(args.prompt as string) ?? "", (args.description as string) ?? ""]
+                  .filter((t) => t.length > 0)
+                  .join("\n"),
+              },
+              cwd: directory,
+            },
+            directory,
+          );
+          if (guard.code === 2) {
+            throw new Error(
+              guard.stderr.trim() ||
+                "code-generation requires an approved plan before dispatching the developer agent",
+            );
+          }
         }
       }
 

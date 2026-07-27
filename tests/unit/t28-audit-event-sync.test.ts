@@ -65,8 +65,9 @@ const AUDIT_MD = join(AIDLC_SRC, "knowledge", "aidlc-shared", "audit-format.md")
 // +RECOMPOSED (adaptive composer) takes it to 70; +REVIEWER_SCOPE_BLOCKED
 // (the reviewer-scope PreToolUse hook) takes it to 71;
 // +PLUGIN_SELECTION_CHANGED (select-plugins set-mode) took it to 72;
-// +REVIEW_REQUESTED and +REVIEW_COMPLETED take it to 74).
-const CANONICAL_COUNT = 74;
+// +REVIEW_REQUESTED and +REVIEW_COMPLETED take it to 74;
+// +PLAN_APPROVAL_BLOCKED (the plan-approval PreToolUse guard) takes it to 75).
+const CANONICAL_COUNT = 75;
 
 /** Slice the lines of `text` BETWEEN the first line matching `start` and the
  *  next line matching `end` (inclusive of both), reproducing `sed -n
@@ -168,8 +169,8 @@ describe("t28 audit event-type sync (migrated from t28-audit-event-sync.sh, plan
 
   // .sh test 7: assert_eq TS_COUNT - the canonical baseline pin, bumped when
   // events are added or removed. (#367 added WORKFLOW_PARKED/UNPARKED -> 69;
-  // #369 removed TEST_RUN_MODE_ENABLED -> 68; HUMAN_TURN took it to 69; the adaptive composer added RECOMPOSED -> 70; REVIEWER_SCOPE_BLOCKED took it to 71; PLUGIN_SELECTION_CHANGED took it to 72; REVIEW_REQUESTED/REVIEW_COMPLETED took it to 74.)
-  test("VALID_EVENT_TYPES.size === 74 (baseline pin) [.sh test 7]", () => {
+  // #369 removed TEST_RUN_MODE_ENABLED -> 68; HUMAN_TURN took it to 69; the adaptive composer added RECOMPOSED -> 70; REVIEWER_SCOPE_BLOCKED took it to 71; PLUGIN_SELECTION_CHANGED took it to 72; REVIEW_REQUESTED/REVIEW_COMPLETED took it to 74; PLAN_APPROVAL_BLOCKED took it to 75.)
+  test("VALID_EVENT_TYPES.size === 75 (baseline pin) [.sh test 7]", () => {
     expect(TS_EVENTS.length).toBe(CANONICAL_COUNT);
   });
 });
