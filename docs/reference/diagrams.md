@@ -116,7 +116,7 @@ flowchart TD
     S22["2.3 Requirements Analysis\n(aidlc-product-agent)"]
     S23["2.4 User Stories\n(aidlc-product-agent)"]
     S24["2.5 Refined Mockups\n(aidlc-design-agent)"]
-    S25["2.6 Application Design\n(aidlc-architect-agent)"]
+    S25["2.6 Domain Design\n(aidlc-architect-agent)"]
     S26["2.7 Units Generation\n(aidlc-architect-agent)"]
     S27["2.8 Delivery Planning\n(aidlc-delivery-agent)"]
     VG2{{"Verification Gate:\nInception --> Construction"}}
@@ -644,7 +644,7 @@ This reference table maps every stage to its execution mode and lead agent for q
 | 2.3 | Requirements Analysis | inline | aidlc-product-agent |
 | 2.4 | User Stories | mob | aidlc-product-agent |
 | 2.5 | Refined Mockups | inline | aidlc-design-agent |
-| 2.6 | Application Design | inline | aidlc-architect-agent |
+| 2.6 | Domain Design | inline | aidlc-architect-agent |
 | 2.7 | Units Generation | inline | aidlc-architect-agent |
 | 2.8 | Delivery Planning | inline | aidlc-delivery-agent |
 | 3.1 | Functional Design | inline | aidlc-architect-agent |

@@ -11,7 +11,7 @@ The aidlc-architect-agent leads the most stages of any single agent in the lifec
 | Stage | Phase | Description |
 |-------|-------|-------------|
 | 1.3 Feasibility & Constraints | Ideation | Technical feasibility assessment and constraint analysis |
-| 2.6 Application Design | Inception | Component design, API contracts, and ADRs |
+| 2.6 Domain Design | Inception | Component design, API contracts, and ADRs |
 | 2.7 Units Generation | Inception | Decomposes design into implementable units of work |
 | 3.1 Functional Design | Construction | Detailed domain models and business logic (per unit) |
 | 3.2 NFR Requirements | Construction | Non-functional requirements with measurable targets (per unit) |

@@ -125,8 +125,8 @@ SKILL.md §CONSTRUCTION Flow for the canonical specification.
 | Lead Agent        | aidlc-architect-agent                                                                                   |
 | support_agents    | aidlc-developer-agent                                                                                   |
 | mode              | inline                                                                                            |
-| Inputs            | unit-of-work.md, unit-of-work-story-map.md, requirements.md, application design artifacts         |
-| Outputs           | `<record>/construction/{unit-name}/functional-design/` -- business-logic-model.md, business-rules.md, domain-entities.md, CONDITIONAL: frontend-components.md |
+| Inputs            | unit-of-work.md, unit-of-work-story-map.md, requirements.md, domain design artifacts         |
+| Outputs           | `<record>/construction/{unit-name}/functional-design/` -- functional-spec.md, rules.md, entities.md, CONDITIONAL: frontend-components.md |
 
 ### Purpose
 
@@ -139,7 +139,7 @@ feasibility input.
 - Unit definition from `<record>/inception/units-generation/unit-of-work.md`
 - Assigned stories from `<record>/inception/units-generation/unit-of-work-story-map.md`
 - Requirements from `<record>/inception/requirements-analysis/requirements.md`
-- Application design artifacts from `<record>/inception/application-design/`
+- Domain design artifacts from `<record>/inception/domain-design/`
 
 ### Steps
 
@@ -148,7 +148,7 @@ feasibility input.
    input. Apply aidlc-architect-agent as the primary perspective.
 
 2. **Read Unit Context** -- Read the unit definition, assigned stories,
-   requirements, and application design artifacts.
+   requirements, and domain design artifacts.
 
 3. **Create Functional Design Plan** -- Analyze the unit's scope and create a
    questions file at
@@ -176,12 +176,12 @@ feasibility input.
 
 5. **Generate Artifacts** -- Generate the following in
    `<record>/construction/{unit-name}/functional-design/`:
-   - **business-logic-model.md**: Detailed algorithms, workflows, data
+   - **functional-spec.md**: Detailed algorithms, workflows, data
      transformations, processing sequences, and decision trees for the unit's
      business logic
-   - **business-rules.md**: Decision rules, validation logic, constraints,
+   - **rules.md**: Decision rules, validation logic, constraints,
      policies, conditional behavior, and business invariants
-   - **domain-entities.md**: Entities, relationships, data structures,
+   - **entities.md**: Entities, relationships, data structures,
      attributes, lifecycle states, and entity interaction patterns
    - **frontend-components.md** (CONDITIONAL -- only if unit includes
      frontend/UI): Component hierarchy, props/state design, interaction flows,
@@ -196,9 +196,9 @@ feasibility input.
 
 | Artifact                 | Description                                                              |
 |--------------------------|--------------------------------------------------------------------------|
-| business-logic-model.md  | Algorithms, workflows, data transformations, processing sequences, decision trees |
-| business-rules.md        | Decision rules, validation logic, constraints, policies, conditional behavior |
-| domain-entities.md       | Entities, relationships, data structures, attributes, lifecycle states   |
+| functional-spec.md  | Algorithms, workflows, data transformations, processing sequences, decision trees |
+| rules.md        | Decision rules, validation logic, constraints, policies, conditional behavior |
+| entities.md       | Entities, relationships, data structures, attributes, lifecycle states   |
 | frontend-components.md   | (CONDITIONAL) Component hierarchy, props/state, interaction flows, form validation, API integration |
 
 ### Approval Gate
@@ -355,7 +355,7 @@ infrastructure and platform input.
 - NFR requirements from `<record>/construction/{unit-name}/nfr-requirements/`
 - Functional design artifacts from
   `<record>/construction/{unit-name}/functional-design/` (if they exist)
-- Application design from `<record>/inception/application-design/` for
+- Domain design from `<record>/inception/domain-design/` for
   architectural context
 
 ### Steps
@@ -365,7 +365,7 @@ infrastructure and platform input.
    platform input.
 
 2. **Read Prior Artifacts** -- Read NFR requirements, functional design
-   artifacts (if they exist), and application design for architectural context.
+   artifacts (if they exist), and domain design for architectural context.
 
 3. **Generate Design Questions** -- Create a questions file at
    `<record>/construction/{unit-name}/nfr-design/nfr-design-questions.md`
@@ -461,7 +461,7 @@ by mapping where NFR patterns apply at the component level.
 | Lead Agent        | aidlc-aws-platform-agent                                                                                |
 | support_agents    | aidlc-devsecops-agent, aidlc-compliance-agent                                                           |
 | mode              | inline                                                                                            |
-| Inputs            | NFR design artifacts, application design, functional design                                       |
+| Inputs            | NFR design artifacts, domain design, functional design                                       |
 | Outputs           | `<record>/construction/{unit-name}/infrastructure-design/` -- deployment-architecture.md, infrastructure-services.md, monitoring-design.md, cicd-pipeline.md, CONDITIONAL: shared-infrastructure.md |
 
 ### Purpose
@@ -476,7 +476,7 @@ aidlc-compliance-agent checking data residency and regulatory constraints.
 - NFR design from `<record>/construction/{unit-name}/nfr-design/` (if exists)
 - Functional design from
   `<record>/construction/{unit-name}/functional-design/` (if exists)
-- Application design from `<record>/inception/application-design/`
+- Domain design from `<record>/inception/domain-design/`
 - NFR requirements from
   `<record>/construction/{unit-name}/nfr-requirements/` (if exists)
 
@@ -487,7 +487,7 @@ aidlc-compliance-agent checking data residency and regulatory constraints.
    (data residency, regulatory constraints) personas and knowledge for support input.
 
 2. **Read Prior Artifacts** -- Read all prior design artifacts for context:
-   NFR design, functional design, application design, NFR requirements.
+   NFR design, functional design, domain design, NFR requirements.
 
 3. **Generate Infrastructure Questions** -- Create a questions file at
    `<record>/construction/{unit-name}/infrastructure-design/infrastructure-design-questions.md`
@@ -609,7 +609,7 @@ the execution plan. Code is written to the workspace root, never to
 - NFR design from `<record>/construction/{unit-name}/nfr-design/` (if exists)
 - Infrastructure design from
   `<record>/construction/{unit-name}/infrastructure-design/` (if exists)
-- Application design from `<record>/inception/application-design/`
+- Domain design from `<record>/inception/domain-design/`
 - Unit definition from
   `<record>/inception/units-generation/unit-of-work.md`
 - Story map from
@@ -623,7 +623,7 @@ This stage has a **two-part structure**: planning followed by generation.
 
 1. **Read All Unit Artifacts** -- Read all design artifacts for the current
    unit (functional design, NFR requirements, NFR design, infrastructure
-   design, application design, unit definition, story map).
+   design, domain design, unit definition, story map).
 
 2. **Create Code Generation Plan** -- Create a detailed plan at
    `<record>/construction/{unit-name}/code-generation/code-generation-plan.md`
