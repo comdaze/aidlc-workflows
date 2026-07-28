@@ -20,18 +20,18 @@
     "render-surface": "tui"
   },
   "counts": {
-    "total": 477,
+    "total": 480,
     "enumeratedByClass": {
-      "function": 246,
+      "function": 248,
       "audit": 74,
       "scope": 9,
       "stage": 32,
-      "hook": 13,
+      "hook": 14,
       "subcommand": 96,
       "render-surface": 7
     },
     "coveredByClass": {
-      "function": 101,
+      "function": 103,
       "audit": 33,
       "scope": 9,
       "stage": 9,
@@ -2077,6 +2077,18 @@
     },
     {
       "unitClass": "function",
+      "unitId": "function:modelRatesPath",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t252-usage.test.ts",
+          "mechanism": "none"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "function",
       "unitId": "function:mustGet",
       "minMechanism": "none",
       "coveredBy": [],
@@ -2749,6 +2761,18 @@
     },
     {
       "unitClass": "function",
+      "unitId": "function:sessionsDir",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t252-usage.test.ts",
+          "mechanism": "none"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "function",
       "unitId": "function:setActiveIntentCursor",
       "minMechanism": "none",
       "coveredBy": [],
@@ -3254,6 +3278,13 @@
         }
       ],
       "status": "covered"
+    },
+    {
+      "unitClass": "hook",
+      "unitId": "aidlc-fold-usage",
+      "minMechanism": "none",
+      "coveredBy": [],
+      "status": "UNCOVERED"
     },
     {
       "unitClass": "hook",
