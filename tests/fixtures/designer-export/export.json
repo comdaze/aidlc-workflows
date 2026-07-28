@@ -1860,6 +1860,7 @@
         ],
         "monitoring-design": [
           "service",
+          "ui",
           "packaging"
         ],
         "cicd-pipeline": [

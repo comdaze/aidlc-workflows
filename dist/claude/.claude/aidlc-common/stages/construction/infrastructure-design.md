@@ -17,7 +17,7 @@ produces:
   - cicd-pipeline
 produces_kinds:
   infrastructure-specification: [service, ui, packaging]
-  monitoring-design: [service, packaging]
+  monitoring-design: [service, ui, packaging]
   cicd-pipeline: [service, ui, packaging, library]
 consumes:
   - artifact: performance-design

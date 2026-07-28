@@ -31,10 +31,10 @@ graph LR
         I1 -.->|"7 stages"| I7
     end
 
-    subgraph INCEPTION["INCEPTION (2.1-2.8)"]
+    subgraph INCEPTION["INCEPTION (2.1-2.9)"]
         N1["Reverse Engineering"]
         N7["Delivery Planning"]
-        N1 -.->|"8 stages"| N7
+        N1 -.->|"9 stages"| N7
     end
 
     subgraph CONSTRUCTION["CONSTRUCTION (3.1-3.7)"]
@@ -649,7 +649,8 @@ This reference table maps every stage to its execution mode and lead agent for q
 | 2.5 | Refined Mockups | inline | aidlc-design-agent |
 | 2.6 | Domain Design | inline | aidlc-architect-agent |
 | 2.7 | Units Generation | inline | aidlc-architect-agent |
-| 2.8 | Delivery Planning | inline | aidlc-delivery-agent |
+| 2.8 | Contract Design | inline | aidlc-architect-agent |
+| 2.9 | Delivery Planning | inline | aidlc-delivery-agent |
 | 3.1 | Functional Design | inline | aidlc-architect-agent |
 | 3.2 | NFR Requirements | inline | aidlc-architect-agent |
 | 3.3 | NFR Design | inline | aidlc-architect-agent |

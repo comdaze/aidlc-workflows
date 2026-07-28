@@ -1003,7 +1003,7 @@ describe("t66 designer export (spawnSync CLI-boundary)", () => {
   });
 
   // .sh:892-900 — Group B: element counts match live sources (4 assertions)
-  test("export element counts: stages=32, scopes=9, artifacts=122, agents=14", () => {
+  test("export element counts: stages=33, scopes=9, artifacts=117, agents=14", () => {
     const res = spawnSync(BUN, [GRAPH_TS, "export"], { encoding: "utf8" });
     const out = JSON.parse(res.stdout) as {
       stages: unknown[];
