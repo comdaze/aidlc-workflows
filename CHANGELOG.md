@@ -1,6 +1,14 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [2.5.12] - 2026-07-28
+
+Plugin management commands now route deterministically through every `/aidlc` slash-command harness instead of being misread as freeform workflow requests. **Upgrade:** re-copy your `dist/<harness>/` shell into the project so the shared plugin parser and harness routing updates are installed.
+
+* `/aidlc plugin list [--json]`, `/aidlc plugin sync`, and `/aidlc plugin select [names]` now dispatch to their existing utility handlers without asking to compose a scope or advancing an active workflow.
+* `/aidlc plugin help`, a missing plugin verb, and unknown plugin verbs now produce deterministic help or errors across the dispatcher, orchestrator, and Kiro pre-LLM interceptor.
+* Kiro terminal-command interception now latches plugin utilities for the current turn, preventing a conductor retry from rolling the workflow forward after the plugin command completes.
+
 ## [2.5.11] - 2026-07-24
 
 Intent Capture now keeps generated intent and stakeholder claims grounded in the user's description, confirmed answers, workflow-selected scope, or explicitly registered memory. Unsupported content is omitted, elicited, or surfaced as a human-owned assumption instead of being presented as fact. **Upgrade:** re-copy your `dist/<harness>/` shell into the project so the updated stage, Product Lead reviewer contract, and `claim-sources` sensor are installed.
