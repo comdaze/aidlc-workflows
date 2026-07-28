@@ -40,6 +40,11 @@ no standalone meaning.
    bun .claude/tools/aidlc-utility.ts intent-birth --scope <name> --arguments "<description>" --label "<2-3 word essence>"
    ```
 
-   `--scope` seeds the initial scope (defaults to `poc`); omit `--arguments`
-   and `--label` when the user gave no description. Print the tool's output and
-   stop. This does not advance a stage; run `/aidlc` afterwards to continue.
+   `--scope` seeds the initial scope (defaults to `poc`). If the user gave
+   NEITHER a scope NOR a description, do NOT run a bare `intent-birth`: the tool
+   refuses it (birth is a mutation; a bare call would mint a garbage
+   default-scope intent). Ask the user what they'd like to build (or which
+   scope), then birth with their answer. When the user named a scope but gave no
+   description, omit `--arguments` and `--label` (the dir name falls back to the
+   scope token) and the engine picks up the named scope. Print the tool's output
+   and stop. This does not advance a stage; run `/aidlc` afterwards to continue.

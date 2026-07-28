@@ -3476,6 +3476,30 @@ function ensureWorkspaceDirs(projectDir: string): void {
 // the BORN intent's record (the active-intent cursor set first makes the
 // default-resolving state/audit helpers resolve there).
 function handleIntentBirth(projectDir: string, flags: Record<string, string>): void {
+  // FAIL CLOSED on a truly-bare invocation (no --scope, no --arguments, no
+  // --label). Birth is a MUTATION: it mints an intent record, appends an
+  // intents.json row, and repoints the active-intent cursor. A bare
+  // `intent-birth` with nothing describing the work is almost always a routing
+  // fumble (e.g. a conductor reaching for a birth command by hand), NOT a
+  // deliberate request for a default-scope intent named after the scope token.
+  // Absent this guard the fallbacks below silently mint a garbage intent
+  // (default scope, empty description, slug == scope token) that needs manual
+  // cleanup. Refuse instead, and point at the blessed entry points, every one
+  // of which supplies at least a scope or a description: the engine's birth
+  // print directive (`next` / `next --new-intent`) always names `--scope`, and
+  // the init runner forwards a `--arguments` description. This never trips a
+  // legitimate call.
+  if (!flags.scope && !flags.arguments && !flags.label) {
+    die(
+      "intent-birth refused: no --scope, --arguments, or --label given. Birth " +
+        "is a mutation and a bare invocation mints a garbage default-scope " +
+        "intent. Start work via `/aidlc \"<what to build>\"` (the engine names " +
+        "the birth move for you) or `/aidlc-init [--scope <name>] <description>`; " +
+        "to invoke this tool directly, pass at least `--scope <name>` (and " +
+        "ideally `--arguments \"<description>\" --label \"<2-3 word essence>\"`).",
+    );
+  }
+
   // Default to poc when --scope is omitted. Matches the orchestrator's
   // ultimate fallback in SKILL.md and makes direct tool invocations
   // (`bun aidlc-utility.ts intent-birth`) work without extra flags.

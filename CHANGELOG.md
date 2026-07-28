@@ -1,6 +1,15 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [2.5.24] - 2026-07-30
+
+`intent-birth` now refuses a truly-bare invocation instead of silently minting a garbage default-scope intent, and starting a second, unrelated intent now hands the conductor off to a fresh session so the new work does not inherit the completed intent's transcript. Scope-runners (`/aidlc-<scope>`) gained a "Starting unrelated new work?" section so a completed workflow no longer dead-ends at `done`. **Upgrade:** re-copy your `dist/<harness>/` shell into the project so the updated tools, orchestrator skill, and scope-runners are installed.
+
+* `bun .claude/tools/aidlc-utility.ts intent-birth` with no `--scope`, `--arguments`, or `--label` now errors ("intent-birth refused ...") and mutates nothing; pass at least a scope or a description. Every blessed path (the engine's birth print directive, `/aidlc-init`) still supplies one, so this never trips a legitimate call.
+* On a completed intent, `next` still returns `done`, but the reason now hints that genuinely new, unrelated work is startable via `next --new-intent --scope <scope>` (an offer gated on a human yes, never an auto-birth).
+* A `next --new-intent` birth directive now tells the conductor to STOP after birth and start a fresh session (on Claude Code, `/clear`) before running `/aidlc`, so the new intent begins with a clean slate; nothing is lost because the intent is saved on disk. Fresh-start births are unchanged (continue in the same session).
+* Every scope-runner now carries a "Starting unrelated new work?" section mirroring the orchestrator's recognise, offer (`AskUserQuestion`), and `next --new-intent` guidance, defaulting the proposed scope to the runner's baked scope.
+
 ## [2.5.17] - 2026-07-29
 
 Hardens the Kiro CLI and Kiro IDE shell permission lists. Kiro matches each `execute_bash` pattern as a full string, not as a prefix, so the shipped patterns were both too narrow (a bare `date -u` and `bun run .kiro/tools/<tool>.ts` needed an approval the framework never asked for, stalling a workflow when no approver was available) and too broad (a trailing wildcard let `bun .kiro/tools/../../anything.ts` run unprompted). The pre-approved set is now the framework's own project-relative tool calls and nothing else, and the deny list catches the recursive-`rm` and `git push` variants full-string matching used to miss. **Upgrade:** re-copy your `dist/kiro/` or `dist/kiro-ide/` shell into the project so the corrected agent configs are installed. If you start Kiro from a directory other than the project root, start it from the root instead: out-of-root invocation forms are no longer pre-approved.

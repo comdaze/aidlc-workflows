@@ -434,6 +434,19 @@ function parseNextFlags(args: string[]): ParsedFlags {
   return flags;
 }
 
+// Appended to the `done` reason emitted when the ACTIVE intent has no in-scope
+// stage left (a completed workflow). Without this, a scope-runner's forwarding
+// loop ("repeat until done") dead-ends here with no cue that new, unrelated
+// work has an escape hatch. This is a HINT to the conductor, not an instruction
+// to act: starting a second intent is still gated on the SKILL's
+// recognise-vs-continue judgement plus the human "yes" offer (never auto-birth).
+// The leading space lets callers concatenate it onto their own reason text.
+const NEW_WORK_HINT =
+  " If this input is genuinely NEW, unrelated work (not a follow-up to the " +
+  "completed intent), don't stop here: offer to start a second intent, and on " +
+  "the human's yes run `next --new-intent --scope <scope> \"<text>\"` (see the " +
+  "SKILL's new-work offer, never auto-birth).";
+
 // The workflow-birth print for a resolved scope on a fresh workspace (no intent
 // record yet). A user who described what to build — `/aidlc "build the auth
 // service"`, the bare positional `next bugfix`, or `next --scope bugfix` — asked
@@ -472,8 +485,28 @@ function birthPrintDirective(scope: string, flags: ParsedFlags, description?: st
   // Omit the parenthetical when the scope does not resolve (fixture trees).
   const clause = costClause(scope);
   const cost = clause ? ` (${clause})` : "";
+  const runCmd = `Run \`bun ${harnessDir()}/tools/aidlc-utility.ts ${cmd.join(" ")}\``;
+  // TWO tails, by birth kind:
+  //   - fresh-start (Branch 7b/9a): re-enter the loop in the SAME session. There
+  //     is no prior intent whose context to shed. Byte-identical to the shape the
+  //     unit/integration pins expect ("then re-run `next` to continue").
+  //   - --new-intent (Branch 4a): a SECOND, unrelated intent born alongside a
+  //     completed/active one. The session is now carrying the PRIOR intent's
+  //     discussion, which is noise for the new work. So after birth, STOP and hand
+  //     off to a fresh session before continuing. The new intent's cursor + state
+  //     persist on disk (SessionStart re-injects them), so nothing is lost. Kept
+  //     harness-neutral ("a fresh session"); the per-harness SKILL names the
+  //     concrete command (Claude: `/clear`).
+  if (flags.newIntent) {
+    return printDirective(
+      `${runCmd} to start the new intent${cost}.${labelHint} Then STOP, do NOT re-run \`next\` in this session. ` +
+        `This is a NEW, unrelated intent, and the current session still carries the previous intent's context. ` +
+        `Tell the user to start a fresh session (in Claude Code, \`/clear\`; or restart the CLI), then run \`/aidlc\` to begin the new intent with a clean slate. ` +
+        `Nothing is lost: the intent is saved on disk and resumes on the next \`next\`.`,
+    );
+  }
   return printDirective(
-    `Run \`bun ${harnessDir()}/tools/aidlc-utility.ts ${cmd.join(" ")}\` to start the workflow${cost}, then re-run \`next\` to continue.${labelHint}`,
+    `${runCmd} to start the workflow${cost}, then re-run \`next\` to continue.${labelHint}`,
   );
 }
 
@@ -1639,10 +1672,13 @@ function handleNext(args: string[], projectDir: string | undefined): void {
   // clean LLM label) — the engine emits the SAME birthPrintDirective the fresh-
   // start path (Branch 7b/9a) uses, so BOTH births carry the --label placeholder
   // identically. The human-yes gate already happened conductor-side; this is the
-  // run-then-continue print that performs it. Precedes every continuation branch
-  // so an active intent's state never routes the new-work birth into "advance the
-  // current stage". The freeform new-work text rides in flags.intent (the same
-  // slot Branch 9a threads as the description).
+  // birth print that performs it. Unlike the fresh-start tail, the new-intent
+  // directive tells the conductor to STOP after birth and hand off to a fresh
+  // session (birthPrintDirective branches on flags.newIntent): a second, unrelated
+  // intent should not inherit the completed intent's session context. Precedes
+  // every continuation branch so an active intent's state never routes the
+  // new-work birth into "advance the current stage". The freeform new-work text
+  // rides in flags.intent (the same slot Branch 9a threads as the description).
   if (flags.newIntent) {
     // Use the EXPLICIT --scope, not the precedence-ladder `scope` (which lets the
     // ACTIVE intent's state scope win — wrong for a brand-new intent: the offer
@@ -1938,7 +1974,7 @@ function handleNext(args: string[], projectDir: string | undefined): void {
     // No stage left to run — the workflow is complete.
     emit({
       kind: "done",
-      reason: `Workflow complete — no in-scope stage remains after ${currentSlug} (scope: ${scope}).`,
+      reason: `Workflow complete — no in-scope stage remains after ${currentSlug} (scope: ${scope}).${NEW_WORK_HINT}`,
     });
     return;
   }
@@ -3835,7 +3871,7 @@ function handleReport(args: string[], projectDir: string | undefined): void {
         emit({
           kind: "done",
           reason:
-            `Workflow is already completed at "${slug}" (scope: ${scope}); no transition was needed.`,
+            `Workflow is already completed at "${slug}" (scope: ${scope}); no transition was needed.${NEW_WORK_HINT}`,
         });
         return;
       }
