@@ -12,6 +12,18 @@ this protocol are written as fenced ` ```question ` blocks (`prompt`, `header`,
 single place that binds that spec to the harness's native UI. Stage files and
 this protocol never name a harness tool.
 
+**A ` ```question ` fence is a SPEC to be rendered THROUGH the annex's native
+question mechanism: it is NEVER printed verbatim to the user.** The fenced
+block and its field lines are authoring input, not chat output. Echoing the
+raw spec into the transcript is a protocol violation: it yields a
+non-interactive wall of text and drops the native "Other" escape hatch. (On
+Claude Code that binding is the `AskUserQuestion` tool; the fence is translated
+into a tool call and never echoed to chat. Other harnesses bind to their own
+native prompt UI, and the same "spec in, native prompt out; never echo the
+fence" rule holds for all of them.) The ` ```question ` blocks that appear in
+THIS protocol are illustrative specs being documented, not questions to
+present.
+
 ### Critical Compliance Checklist (most commonly missed steps)
 Before and during EVERY stage, verify:
 1. [ ] **Use the engine for every lifecycle transition** — before the prompt, `aidlc-orchestrate.ts report --stage <slug> --result awaiting-approval`; after the response, report `approved` or `rejected`; after revision work, report `revised`. When the active stage's own condition proves it does not apply, report `skipped --reason "<reason>"`. Never call lifecycle verbs on `aidlc-state.ts` directly. The engine emits the correct audit events and routes only on approval, completion, or a justified skip. Do NOT call `aidlc-audit.ts append` separately. (§2)

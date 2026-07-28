@@ -1,6 +1,13 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [2.5.18] - 2026-07-30
+
+The orchestrator must never echo a fenced ` ```question ` block as literal chat text: the fence is an authoring spec that is rendered THROUGH the harness's native question mechanism, never printed verbatim. Dumping the raw fence yields a non-interactive wall of text and drops the native "Other" escape hatch. This tightens the harness-neutral stage protocol and every per-harness question-rendering annex (Claude, Codex, Kiro CLI, Kiro IDE, opencode). Documentation-only illustrative fences in those files are explicitly carved out so the rule does not forbid its own examples. **Upgrade:** re-copy your `dist/<harness>/` shell into the project so the updated protocol and question-rendering annex are installed. Behaviour is a documentation and contract change only; no command, flag, or state format changes.
+
+* The harness-neutral `stage-protocol.md` section "Structured questions" now states that a ` ```question ` fence is a spec rendered through the annex and is never printed verbatim ("spec in, native prompt out; never echo the fence").
+* Each harness question-rendering annex gains a non-negotiable "Never echo the spec" section naming the failure a protocol violation, enumerating the five structured-question sites it covers (approval gates, interaction-mode choice, ladder prompt, halt-and-ask, learnings gate), and preserving the documentation carve-out for illustrative example fences.
+
 ## [2.5.17] - 2026-07-29
 
 Hardens the Kiro CLI and Kiro IDE shell permission lists. Kiro matches each `execute_bash` pattern as a full string, not as a prefix, so the shipped patterns were both too narrow (a bare `date -u` and `bun run .kiro/tools/<tool>.ts` needed an approval the framework never asked for, stalling a workflow when no approver was available) and too broad (a trailing wildcard let `bun .kiro/tools/../../anything.ts` run unprompted). The pre-approved set is now the framework's own project-relative tool calls and nothing else, and the deny list catches the recursive-`rm` and `git push` variants full-string matching used to miss. **Upgrade:** re-copy your `dist/kiro/` or `dist/kiro-ide/` shell into the project so the corrected agent configs are installed. If you start Kiro from a directory other than the project root, start it from the root instead: out-of-root invocation forms are no longer pre-approved.
