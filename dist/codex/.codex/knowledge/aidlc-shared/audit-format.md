@@ -111,7 +111,7 @@ the active space's shared `codekb/<repo>/` tree.
 
 | Event | When | Required Fields | Emitter |
 |-------|------|-----------------|---------|
-| `PLAN_APPROVAL_BLOCKED` | A code-generation developer-agent dispatch was refused because no unit had an approved `code-generation-plan.md` on disk (stage Steps 2-3 must precede Step 4) | Timestamp, Tool, Target, Stage, Unit | `hooks/aidlc-plan-approval-guard.ts` (PreToolUse) |
+| `PLAN_APPROVAL_BLOCKED` | A code-generation developer-agent dispatch was refused because a targeted unit lacked a non-empty, explicitly approved `code-generation-plan.md` (stage Steps 2-3 must precede Step 4) | Timestamp, Tool, Target, Stage, Unit | `hooks/aidlc-plan-approval-guard.ts` (PreToolUse) |
 
 ### Utility Events (1 event)
 

@@ -1,7 +1,7 @@
 // t147-kiro-hook-adapter: the Kiro stdin shim normalizes live-captured
 // payloads into the core hooks' contract.
 //
-// covers: file:hooks/aidlc-stop.ts, file:hooks/aidlc-session-start.ts, file:hooks/aidlc-sync-statusline.ts, file:hooks/aidlc-log-subagent.ts
+// covers: file:hooks/aidlc-stop.ts, file:hooks/aidlc-session-start.ts, file:hooks/aidlc-sync-statusline.ts, file:hooks/aidlc-log-subagent.ts, hook:aidlc-plan-approval-guard
 //
 // WHAT. Each case pipes a fixture from tests/fixtures/kiro-hook-payloads/
 // (field-verbatim captures off kiro-cli 2.6.1 — findings.md §0.2) into
@@ -147,6 +147,17 @@ function runAdapter(
   };
 }
 
+function seedUnapprovedCodeGeneration(dir: string, unit: string): void {
+  const state = readFileSync(seededStateFile(dir), "utf-8").replace(
+    /(- \*\*Current Stage\*\*:\s*)[^\n]+/,
+    `$1code-generation`,
+  );
+  writeFileSync(seededStateFile(dir), state, "utf-8");
+  mkdirSync(join(seededRecordDir(dir), "construction", unit, "code-generation"), {
+    recursive: true,
+  });
+}
+
 describe("t147 Kiro hook adapter (live-captured payload fixtures)", () => {
   test("1: stop blocks with a reason while the workflow has pending work", () => {
     const dir = scratchProject(true);
@@ -156,6 +167,32 @@ describe("t147 Kiro hook adapter (live-captured payload fixtures)", () => {
       const out = JSON.parse(r.stdout) as { decision?: string; reason?: string };
       expect(out.decision).toBe("block");
       expect(out.reason ?? "").not.toBe("");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("1a: plan-approval guard blocks an unapproved developer stage", () => {
+    const dir = scratchProject(true);
+    try {
+      seedUnapprovedCodeGeneration(dir, "todo-core");
+      const r = runAdapter(dir, "plan-approval-guard", {
+        hook_event_name: "preToolUse",
+        cwd: dir,
+        tool_name: "subagent",
+        tool_input: {
+          task: "Implement todo-core",
+          stages: [
+            {
+              name: "implement_todo_core",
+              role: "aidlc-developer-agent",
+              prompt_template: "Implement todo-core",
+            },
+          ],
+        },
+      });
+      expect(r.code).toBe(2);
+      expect(r.stderr).toContain("plan-approval guard");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

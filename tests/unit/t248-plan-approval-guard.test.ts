@@ -96,6 +96,17 @@ describe("t248a plan-approval decision table", () => {
     expect(v.mentioned).toEqual(["todo-core"]);
   });
 
+  test("a prompt naming approved and unapproved units blocks until every named unit is approved", () => {
+    const v = evaluatePlanApprovalDispatch(
+      "Task",
+      "aidlc-developer-agent",
+      "Generate todo-core using auth for reference",
+      { ...CTX, units: [BARE, SIBLING_APPROVED] },
+    );
+    expect(v.block).toBe(true);
+    expect(v.mentioned).toEqual(["todo-core", "auth"]);
+  });
+
   test("a prompt naming no known unit falls back to any-approved", () => {
     const anyApproved = evaluatePlanApprovalDispatch(
       "Task",
@@ -162,17 +173,21 @@ describe("t248a plan-approval decision table", () => {
     expect(promptMentionsUnit("re-authorize tokens", "auth")).toBe(false);
   });
 
-  test("the tag grammar mirrors the stop hook: blank/underscore tags are pending", () => {
+  test("only an explicit answer on the Plan Approval question authorizes generation", () => {
     expect(questionsFileApproved("## Plan Approval\n[Answer]:\n")).toBe(false);
     expect(questionsFileApproved("## Plan Approval\n[Answer]: ___\n")).toBe(false);
     expect(questionsFileApproved("## Plan Approval\n[Answer]: A. Approve Plan\n")).toBe(true);
-    // A reset tag after Request Changes re-arms the guard even when an older
-    // answered tag remains above it.
+    expect(questionsFileApproved("## Plan Approval\n[Answer]: B. Request Changes\n")).toBe(false);
     expect(
       questionsFileApproved(
-        "## Round 1\n[Answer]: B. Request Changes\n## Plan Approval\n[Answer]:\n",
+        "## Implementation Question\n[Answer]: A. Approve Plan\n## Plan Approval\n[Answer]:\n",
       ),
     ).toBe(false);
+    expect(
+      questionsFileApproved(
+        "## Plan Approval\n[Answer]: A. Approve Plan\n## Notes\n[Answer]: B. Request Changes\n",
+      ),
+    ).toBe(true);
     expect(questionsFileApproved("")).toBe(false);
   });
 
@@ -229,12 +244,16 @@ ${autonomy}
 function seedUnit(
   proj: string,
   unit: string,
-  opts: { plan?: boolean; answer?: string | null } = {},
+  opts: { plan?: boolean | "empty"; answer?: string | null } = {},
 ): void {
   const dir = join(proj, RECORD_REL, "construction", unit, "code-generation");
   mkdirSync(dir, { recursive: true });
   if (opts.plan) {
-    writeFileSync(join(dir, "code-generation-plan.md"), "# Plan\n- [ ] Step 1\n", "utf-8");
+    writeFileSync(
+      join(dir, "code-generation-plan.md"),
+      opts.plan === "empty" ? "  \n" : "# Plan\n- [ ] Step 1\n",
+      "utf-8",
+    );
   }
   if (opts.answer !== undefined) {
     writeFileSync(
@@ -287,6 +306,17 @@ describe("t248b hook lifecycle", () => {
       expect(runHook(proj, DISPATCH("Implement todo-core")).code).toBe(2);
       seedUnit(proj, "todo-core", { plan: true, answer: "A. Approve Plan" });
       expect(runHook(proj, DISPATCH("Implement todo-core")).code).toBe(0);
+    } finally {
+      rmSync(proj, { recursive: true, force: true });
+    }
+  });
+
+  test("an empty plan file remains blocked even with an explicit approval answer", () => {
+    const proj = scratchProject();
+    try {
+      seedState(proj);
+      seedUnit(proj, "todo-core", { plan: "empty", answer: "A. Approve Plan" });
+      expect(runHook(proj, DISPATCH("Implement todo-core")).code).toBe(2);
     } finally {
       rmSync(proj, { recursive: true, force: true });
     }

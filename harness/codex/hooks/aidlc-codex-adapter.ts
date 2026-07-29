@@ -76,6 +76,26 @@ interface CodexHookInput {
   stop_hook_active?: boolean;
 }
 
+interface CodexSpawnAgentInput {
+  agent_type?: unknown;
+  message?: unknown;
+  items?: unknown;
+}
+
+function spawnAgentPrompt(input: CodexSpawnAgentInput): string {
+  const parts: string[] = [];
+  if (typeof input.message === "string") parts.push(input.message);
+  if (Array.isArray(input.items)) {
+    for (const item of input.items) {
+      if (item !== null && typeof item === "object") {
+        const text = (item as Record<string, unknown>).text;
+        if (typeof text === "string") parts.push(text);
+      }
+    }
+  }
+  return parts.join("\n");
+}
+
 export async function run(
   target: string,
   input: string,
@@ -455,29 +475,32 @@ switch (target) {
 
   case "plan-approval-guard": {
     // PreToolUse: code-generation's plan-before-generation ordering. Codex's
-    // delegation surface is the spawn_agent tool; its input schema is not
-    // pinned by a fixture here, so the shim is deliberately shape-agnostic:
-    // when the serialized tool_input names the developer agent, the call is a
-    // developer dispatch and the WHOLE serialized input is forwarded as the
-    // prompt text (the core hook matches unit names on word boundaries, so
-    // JSON syntax around them is harmless). Anything else - other tools,
-    // spawns of other roles - allows instantly. The block contract is exit 2
-    // + stderr, cached like reviewer-scope so a duplicate delivery replays
-    // the block faithfully. Fail-open on any spawn failure.
+    // delegation surface is spawn_agent, whose arguments carry the target in
+    // tool_input.agent_type and task text in message/items. Top-level
+    // agent_type identifies the currently acting agent, so it must not select
+    // the spawn target. Anything else - other tools or other target roles -
+    // allows instantly. The block contract is exit 2 + stderr, cached like
+    // reviewer-scope so a duplicate delivery replays the block faithfully.
+    // Fail-open on any spawn failure.
     const tool = codex.tool_name ?? "";
-    if (tool !== "spawn_agent" && tool !== "Task") {
+    if (tool !== "spawn_agent") {
       persistResponse("", 0);
       return 0;
     }
-    const serialized = JSON.stringify(codex.tool_input ?? {});
-    if (!serialized.includes("aidlc-developer-agent")) {
+    const spawnInput: CodexSpawnAgentInput = codex.tool_input ?? {};
+    const target =
+      typeof spawnInput.agent_type === "string" ? spawnInput.agent_type : "";
+    if (target !== "aidlc-developer-agent") {
       persistResponse("", 0);
       return 0;
     }
     const fwd = JSON.stringify({
       hook_event_name: "PreToolUse",
       tool_name: "Task",
-      tool_input: { subagent_type: "aidlc-developer-agent", prompt: serialized },
+      tool_input: {
+        subagent_type: target,
+        prompt: spawnAgentPrompt(spawnInput),
+      },
     });
     const r = runCoreWithStderr("aidlc-plan-approval-guard.ts", fwd);
     persistResponse(r.stdout, r.code === 2 ? 2 : 0, r.stderr);

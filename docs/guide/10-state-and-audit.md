@@ -79,7 +79,7 @@ The audit trail lives in the intent's record dir at `aidlc/spaces/<space>/intent
 
 ### 75-event taxonomy
 
-Events are organized into 19 categories:
+Events are organized into 20 categories:
 
 | Category | Count | Events |
 |----------|------:|--------|

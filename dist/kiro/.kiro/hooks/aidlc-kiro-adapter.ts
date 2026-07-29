@@ -507,17 +507,21 @@ if (target === "state-transition-guard") {
 // pipeline, or an unspawnable core hook allows the call.
 if (target === "plan-approval-guard") {
   const tool = kiro.tool_name ?? "";
-  if (tool !== "subagent") process.exit(0);
+  if (tool !== "subagent") return 0;
   const ti = kiro.tool_input ?? {};
   const stages = (ti.stages as Array<{ role?: string; prompt_template?: string }>) ?? [];
   const devStages = stages.filter((s) => s.role === "aidlc-developer-agent");
-  if (devStages.length === 0) process.exit(0);
+  if (devStages.length === 0) return 0;
   const prompt = [
     (ti.task as string) ?? "",
     ...devStages.map((s) => s.prompt_template ?? ""),
   ].filter((t) => t.length > 0).join("\n");
+  const executable = process.env.AIDLC_COMPILED_EXECUTABLE;
+  const command = executable
+    ? [executable, "hook", "plan-approval-guard"]
+    : [process.execPath, join(HOOKS_DIR, "aidlc-plan-approval-guard.ts")];
   const r = Bun.spawnSync(
-    [process.execPath, join(HOOKS_DIR, "aidlc-plan-approval-guard.ts")],
+    command,
     {
       stdin: Buffer.from(
         JSON.stringify({
@@ -527,16 +531,17 @@ if (target === "plan-approval-guard") {
         }),
         "utf-8",
       ),
-      cwd: kiro.cwd ?? process.cwd(),
+      cwd: childCwd,
       stdout: "pipe",
       stderr: "pipe",
+      env: projectEnv,
     },
   );
   if (r.exitCode === 2) {
     process.stderr.write(r.stderr?.toString() ?? "");
-    process.exit(2);
+    return 2;
   }
-  process.exit(0);
+  return 0;
 }
 
 // --- reviewer-scope: the per-unit reviewer read-scope bound (preToolUse) ---

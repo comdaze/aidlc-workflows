@@ -26,15 +26,12 @@
 // plan). The hook resolves the workflow's known units (the compiled bolt DAG
 // when one exists, plus the on-disk construction/<unit>/ dirs - incremental
 // scopes skip units-generation, so the dirs are the only unit register
-// there), finds which of them the prompt mentions, and requires that at
-// least one mentioned unit has BOTH its plan on disk AND its Plan Approval
-// answered. A prompt that names no known unit falls back to "any unit
-// approved"; a workflow with no plan anywhere - the reported failure - is
-// refused outright. "Answered" mirrors the Stop hook's tag grammar
-// (stage-protocol.md: a blank or underscores-only `[Answer]:` is pending):
-// the questions file must carry at least one answered tag and no pending
-// one, so a reset tag after "Request Changes" keeps blocking until the
-// human re-approves.
+// there), finds which of them the prompt mentions, and requires that EVERY
+// mentioned unit has BOTH a non-empty plan on disk AND an explicit "Approve
+// Plan" answer on its Plan Approval question. A prompt that names no known
+// unit falls back to "any unit approved"; a workflow with no plan anywhere -
+// the reported failure - is refused outright. Other answered questions and a
+// "Request Changes" answer never count as approval.
 //
 // Deliberate carve-out: under an autonomous Construction swarm
 // (`Construction Autonomy Mode: autonomous`) the hook does not enforce. The
@@ -93,9 +90,9 @@ const DISPATCH_TOOLS = new Set(["Task", "Agent"]);
 export interface UnitEvidence {
   /** Unit-of-work name, e.g. todo-core. */
   unit: string;
-  /** construction/<unit>/code-generation/code-generation-plan.md exists. */
+  /** construction/<unit>/code-generation/code-generation-plan.md exists and is non-empty. */
   planExists: boolean;
-  /** The unit's questions file records an answered, non-pending Plan Approval. */
+  /** The unit's Plan Approval question records an explicit "Approve Plan" answer. */
   approved: boolean;
 }
 
@@ -112,25 +109,36 @@ export function normalizeStageName(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, "-");
 }
 
-// The Stop hook's tag grammar (stage-protocol.md): an `[Answer]:` whose value
-// is blank or underscores-only is PENDING; anything else is answered.
-const PENDING_TAG_RE = /\[Answer\]:[ \t]*_*[ \t]*$/m;
-const TAG_RE = /\[Answer\]:[ \t]*(.*)$/gm;
+const MARKDOWN_HEADING_RE = /^(#{1,6})[ \t]+(.+?)[ \t]*#*[ \t]*$/;
+const ANSWER_TAG_RE = /^\[Answer\]:[ \t]*(.*)$/;
+const APPROVE_PLAN_RE = /^(?:[A-Z][.)][ \t]*)?["']?Approve Plan["']?$/i;
 
 /**
- * True when a questions-file body records a settled approval: at least one
- * answered `[Answer]:` tag and no pending one. A blank tag anywhere keeps the
- * file unsettled - the stage prose resets the Plan Approval tag to blank on
- * "Request Changes", so a revision round re-arms the guard until the human
- * answers again.
+ * True only when the latest Markdown section headed "Plan Approval" records
+ * the explicit "Approve Plan" response. Other answered questions, "Request
+ * Changes", and blank/reset tags do not authorize generation.
  */
 export function questionsFileApproved(body: string): boolean {
-  if (PENDING_TAG_RE.test(body)) return false;
-  for (const m of body.matchAll(TAG_RE)) {
-    const value = m[1].trim();
-    if (value.length > 0 && !/^_+$/.test(value)) return true;
+  let inPlanApproval = false;
+  let foundPlanApproval = false;
+  let latestAnswer: string | null = null;
+
+  for (const line of body.split(/\r?\n/)) {
+    const heading = line.match(MARKDOWN_HEADING_RE);
+    if (heading) {
+      inPlanApproval = heading[2].trim().toLowerCase() === "plan approval";
+      if (inPlanApproval) {
+        foundPlanApproval = true;
+        latestAnswer = null;
+      }
+      continue;
+    }
+    if (!inPlanApproval) continue;
+    const answer = line.match(ANSWER_TAG_RE);
+    if (answer) latestAnswer = answer[1].trim();
   }
-  return false;
+
+  return foundPlanApproval && latestAnswer !== null && APPROVE_PLAN_RE.test(latestAnswer);
 }
 
 // Word-boundary containment for a unit name inside the dispatch prompt. Unit
@@ -148,8 +156,7 @@ export function promptMentionsUnit(text: string, unit: string): boolean {
  *
  * Blocks when the dispatch targets the developer agent for code-generation
  * and no plausible unit has an approved plan: if the prompt names known
- * units, at least one NAMED unit must be approved (a prompt naming only an
- * unplanned unit is exactly the reported bug); if the prompt names none, any
+ * units, EVERY named unit must be approved; if the prompt names none, any
  * approved unit passes (lenient fallback - unit naming in prose is a
  * heuristic); if the workflow knows no units at all, there is no plan
  * anywhere and the dispatch is refused.
@@ -173,7 +180,7 @@ export function evaluatePlanApprovalDispatch(
   const approved = (u: UnitEvidence) => u.planExists && u.approved;
   const mentioned = ctx.units.filter((u) => promptMentionsUnit(promptText, u.unit));
   if (mentioned.length > 0) {
-    return { block: !mentioned.some(approved), mentioned: mentioned.map((u) => u.unit) };
+    return { block: !mentioned.every(approved), mentioned: mentioned.map((u) => u.unit) };
   }
   return { block: !ctx.units.some(approved), mentioned: [] };
 }
@@ -229,17 +236,19 @@ export function knownUnits(projectDir: string, recordDir: string): string[] {
 export function gatherUnitEvidence(recordDir: string, units: string[]): UnitEvidence[] {
   return units.map((unit) => {
     const stageDirPath = join(recordDir, "construction", unit, GUARDED_STAGE);
-    const planExists = existsSync(join(stageDirPath, "code-generation-plan.md"));
+    let planExists = false;
     let approved = false;
     try {
+      const planPath = join(stageDirPath, "code-generation-plan.md");
+      if (existsSync(planPath)) {
+        planExists = readFileSync(planPath, "utf-8").trim().length > 0;
+      }
       const questionsPath = join(stageDirPath, "code-generation-questions.md");
       if (existsSync(questionsPath)) {
         approved = questionsFileApproved(readFileSync(questionsPath, "utf-8"));
       }
     } catch {
-      // Unreadable questions file counts as unapproved for this unit; the
-      // decision stays lenient across units, and total absence of evidence is
-      // the only outright block.
+      // Unreadable evidence counts as missing for this unit.
     }
     return { unit, planExists, approved };
   });
@@ -247,9 +256,9 @@ export function gatherUnitEvidence(recordDir: string, units: string[]): UnitEvid
 
 // --- Main ---------------------------------------------------------------------
 
-if (import.meta.main) {
+export async function run(input: string): Promise<number> {
   // Deterministic off-switch: enforcement disabled entirely.
-  if (process.env.AIDLC_DISABLE_PLAN_APPROVAL_GUARD === "1") process.exit(0);
+  if (process.env.AIDLC_DISABLE_PLAN_APPROVAL_GUARD === "1") return 0;
 
   const projectDir = resolveProjectDirFromHook(import.meta.url);
 
@@ -262,32 +271,32 @@ if (import.meta.main) {
   }
 
   // A TTY means no harness JSON is coming (test / debug contexts) - allow.
-  if (process.stdin.isTTY) process.exit(0);
+  if (process.stdin.isTTY) return 0;
 
   let parsed: ClaudeCodeHookInput;
   try {
-    const raw: unknown = JSON.parse(await Bun.stdin.text());
-    if (!isClaudeCodeHookInput(raw)) process.exit(0);
+    const raw: unknown = JSON.parse(input);
+    if (!isClaudeCodeHookInput(raw)) return 0;
     parsed = raw;
   } catch {
-    process.exit(0); // malformed stdin - fail open
+    return 0; // malformed stdin - fail open
   }
 
   const toolName = parsed.tool_name ?? "";
-  if (!DISPATCH_TOOLS.has(toolName)) process.exit(0);
+  if (!DISPATCH_TOOLS.has(toolName)) return 0;
   const toolInput = parsed.tool_input ?? {};
   const subagentType =
     typeof toolInput.subagent_type === "string" ? toolInput.subagent_type : "";
-  if (subagentType !== GUARDED_AGENT) process.exit(0);
+  if (subagentType !== GUARDED_AGENT) return 0;
 
   let verdict: PlanApprovalVerdict;
   let units: UnitEvidence[] = [];
   try {
     const statePath = stateFilePath(projectDir);
-    if (!existsSync(statePath)) process.exit(0); // no workflow - fail open
+    if (!existsSync(statePath)) return 0; // no workflow - fail open
     const state = readFileSync(statePath, "utf-8");
     const currentStage = getField(state, "Current Stage") ?? "";
-    if (normalizeStageName(currentStage) !== GUARDED_STAGE) process.exit(0);
+    if (normalizeStageName(currentStage) !== GUARDED_STAGE) return 0;
     const autonomyMode = getField(state, "Construction Autonomy Mode");
 
     const recordDir = docsRoot(projectDir);
@@ -302,9 +311,9 @@ if (import.meta.main) {
     });
   } catch (e) {
     recordHookDrop(projectDir, HOOK_NAME, errorMessage(e));
-    process.exit(0); // evidence gathering failed - fail open
+    return 0; // evidence gathering failed - fail open
   }
-  if (!verdict.block) process.exit(0);
+  if (!verdict.block) return 0;
 
   // Audit the refusal so the run's record shows when the ordering bit.
   // Best-effort: an audit failure never changes the block decision. The lock
@@ -341,5 +350,10 @@ if (import.meta.main) {
   }
 
   process.stderr.write(`${blockReason(verdict.mentioned, units)}\n`);
-  process.exit(2); // harness PreToolUse reject contract: exit 2 + stderr blocks
+  return 2; // harness PreToolUse reject contract: exit 2 + stderr blocks
+}
+
+if (import.meta.main) {
+  const input = process.stdin.isTTY ? "" : await Bun.stdin.text();
+  process.exit(await run(input));
 }
