@@ -69,6 +69,9 @@ const manifest: HarnessManifest = {
     // (permissions only, documented contract).
     { src: "cli.json", dst: "cli.json" },
     { src: "dot-gitignore", dst: ".gitignore", projectRoot: true },
+    // Distribution-local, non-destructive install command. It merges the
+    // project-owned Cursor config and onboarding surfaces before copying.
+    { src: "install.ts", dst: "install.ts", projectRoot: true },
   ],
 
   // AGENTS.md at the project root — Cursor auto-reads it (root + nested) as

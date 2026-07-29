@@ -58,7 +58,7 @@ Ad-hoc AI coding works until the project gets real. Then context drifts between 
 | **Kiro CLI** (≥ 2.6) | `dist/kiro/.kiro/` + `dist/kiro/aidlc/` → `<project>/` (+ `dist/kiro/AGENTS.md`) | `/aidlc` | [Quick Start](#quick-start) below + [Running AI-DLC on Kiro CLI](docs/guide/harnesses/kiro-cli.md). |
 | **Claude Code** | `dist/claude/.claude/` + `dist/claude/aidlc/` → `<project>/` | `/aidlc` | [Quick Start](#quick-start) below + [Getting Started](docs/guide/01-getting-started.md). |
 | **Codex CLI** (≥ 0.145.0) | `dist/codex/` → `<project>/` (`.codex/` + `.agents/` + `aidlc/` + `AGENTS.md`) | `$aidlc` (or `/skills` → aidlc) | [Quick Start](#quick-start) below + [AI-DLC on Codex CLI](docs/guide/harnesses/codex-cli.md). |
-| **Cursor** | `dist/cursor/.cursor/` + `dist/cursor/aidlc/` → `<project>/` (+ `dist/cursor/AGENTS.md`) | `/aidlc` | [Quick Start](#quick-start) below + [AI-DLC on Cursor](docs/guide/harnesses/cursor.md). |
+| **Cursor** | `bun dist/cursor/install.ts <project>` | `/aidlc` | [Quick Start](#quick-start) below + [AI-DLC on Cursor](docs/guide/harnesses/cursor.md). |
 | **opencode** (≥ 1.17) | `dist/opencode/` → `<project>/` (`.aidlc/` + `.opencode/` + `aidlc/` + `opencode.json` + `AGENTS.md`) | `/aidlc` | [Quick Start](#quick-start) below + [AI-DLC on opencode](docs/guide/harnesses/opencode.md). |
 
 The deterministic engine — state machine, audit log, and the referee that coordinates parallel agents — is byte-identical across every harness; only the shell differs. Each section in the [Quick Start](#quick-start) installs one harness end to end, and its guide above goes deeper on prerequisites and differences.
@@ -96,7 +96,10 @@ On Windows, use *either* PowerShell *or* CMD, not both — your prompt shows `PS
 > [!TIP]
 > bun has to be on the PATH that *non-interactive* shells see, since that's what a harness uses to run a hook or tool. Those shells read `~/.zshenv` (zsh) or `~/.bashrc` (bash), not `~/.zshrc` — but the bun installer writes to `~/.zshrc`. So if `which bun` works in your terminal yet the harness can't find bun, copy the `BUN_INSTALL`/`PATH` export into `~/.zshenv` (or `~/.bashrc` for bash and Git Bash).
 
-Every harness runs on **AWS Bedrock**, so set Bedrock up before your first run — enable model access in your AWS account and make sure the harness can see working AWS credentials. Each harness section below has the specifics.
+Model-provider setup is harness-specific. The shipped Claude Code configuration
+uses **AWS Bedrock**; Kiro, Cursor, Codex, and opencode use the provider and
+credentials configured in their own runtime. Each harness section below has the
+specifics.
 
 ### Get the code
 
@@ -257,15 +260,15 @@ One install serves both surfaces: the Cursor IDE and the CLI (`agent`) share the
 **2. Set up your project**
 
 ```bash
-mkdir -p your-project/.cursor your-project/aidlc
-cp -R dist/cursor/.cursor/. your-project/.cursor/
-cp -R dist/cursor/aidlc/.   your-project/aidlc/     # the workspace shell — a sibling of .cursor/, not inside it
-cp dist/cursor/AGENTS.md   your-project/AGENTS.md  # merge if you already have one
+bun dist/cursor/install.ts your-project
 ```
 
 The `aidlc/` shell ships the pre-built `aidlc/spaces/default/memory/` method tree the engine reads; `/aidlc --doctor` fails its "workspace shell ready" check without it.
 
-After copying, apply the `.gitignore` entries from the shipped `AGENTS.md` before your first workflow, then verify:
+The installer refuses unresolved file collisions, preserves `.cursor/.gitignore`,
+merges `.cursor/hooks.json` hook arrays and `.cursor/cli.json` permission arrays,
+and adds marked AI-DLC sections to existing `AGENTS.md` and `.gitignore` files.
+Then verify:
 
 ```bash
 bun .cursor/tools/aidlc-utility.ts doctor

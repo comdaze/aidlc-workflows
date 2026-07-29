@@ -45,24 +45,21 @@ projection directly (no `emit.ts`, no split dot-dir). The distribution is:
 
 ## Install
 
-1. Copy the distribution into your project:
+1. Install the distribution into your project:
 
    ```bash
-   mkdir -p your-project/.cursor your-project/aidlc
-   cp -R dist/cursor/.cursor/. your-project/.cursor/
-   cp -R dist/cursor/aidlc/.   your-project/aidlc/     # the workspace shell - a sibling of .cursor/, not inside it
-   cp dist/cursor/AGENTS.md   your-project/AGENTS.md  # or merge into yours
+   bun dist/cursor/install.ts your-project
    ```
 
+   The installer preflights the full copy, refuses unresolved collisions,
+   preserves `.cursor/.gitignore`, structurally merges existing
+   `.cursor/hooks.json` and `.cursor/cli.json`, and adds marked AI-DLC sections
+   to existing `AGENTS.md` and `.gitignore` files instead of replacing them.
    The `aidlc/` shell ships the pre-built `aidlc/spaces/default/memory/` method
    tree the engine reads; `/aidlc --doctor` fails its "workspace shell ready"
    check without it.
 
-2. Apply the `.gitignore` entries from the shipped `AGENTS.md` § "Git
-   Integration" before starting a workflow (per-clone audit shards are committed
-   deliberately; per-user cursors and machine-local runtime stay ignored).
-
-3. Open the project in the Cursor IDE (or start `agent` in it) and run
+2. Open the project in the Cursor IDE (or start `agent` in it) and run
    `/aidlc --doctor`, then `/aidlc` followed by what you want to build.
 
 ## What's different on this harness
@@ -73,11 +70,11 @@ projection directly (no `emit.ts`, no split dot-dir). The distribution is:
 - **Hooks ride `.cursor/hooks.json`** through the AIDLC adapter
   (`.cursor/hooks/aidlc-cursor-adapter.ts`), which maps Cursor's camelCase hook
   events (`sessionStart`, `sessionEnd`, `beforeSubmitPrompt`, `preToolUse`,
-  `postToolUse`, `preCompact`, `stop`) onto the byte-shared core hook bodies
-  (run as bun subprocesses): presence minting on each human turn, the
+  `postToolUse`, `postToolUseFailure`, `preCompact`, `stop`) onto the byte-shared
+  core hook bodies (run as bun subprocesses): presence minting on each human turn, the
   state-transition and reviewer read-scope guards before a tool runs, audit +
-  sensors on write/edit, runtime-compile on shell, and state validation before
-  compaction. The **PreToolUse guards block** via Cursor's
+  sensors on write/edit, failed-Task attribution cleanup, runtime-compile on
+  shell, and state validation before compaction. The **PreToolUse guards block** via Cursor's
   `{"permission":"deny","agent_message":...}` stdout channel. Cursor names its
   shell tool `Shell`; the adapter maps it to the core hooks' `Bash`. Cursor's
   first-class `Delete` tool (unique to this harness - everywhere else deletion
@@ -97,8 +94,12 @@ projection directly (no `emit.ts`, no split dot-dir). The distribution is:
   do not get the `task` tool, so a delegate cannot delegate again.
 - **Subagent identity is reconstructed.** Cursor emits no per-subagent identity
   on hook payloads (its `subagentStart`/`subagentStop` events are documented but
-  never fire on the CLI), so the adapter maintains a Task-spawn tmpdir ledger
-  and keys reviewer read-scope enforcement off it.
+  never fire on the CLI), so the adapter maintains a tmpdir ledger: top-level
+  conversations register themselves at `sessionStart`/`beforeSubmitPrompt`
+  (subagent conversations get neither event), each Task spawn records its
+  agent, and reviewer read-scope enforcement attributes a call to the subagent
+  only when live spawn records name one agent and the calling conversation is
+  not a registered top-level one. Ambiguity fails open rather than blocking.
 - **The method rule is a read instruction, not an import.** Cursor rules do not
   expand `@`-import lines, so `.cursor/rules/aidlc.mdc` (`alwaysApply`) tells the
   agent to read `aidlc/spaces/<space>/memory/*.md`, and the `sessionStart` hook

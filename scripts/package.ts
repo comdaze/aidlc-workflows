@@ -247,6 +247,18 @@ function transform(
     let s = substituteToken(content.toString("utf-8"), harnessDir);
     s = applyRulesRename(s, harnessDir, rulesRename);
     if (harness) s = projectTierFrontmatter(s, srcPath, harness);
+    // Cursor persona bodies are mutable active-space pointers. Ship their
+    // memory references on the default seed so the first startup's
+    // repointHarnessIncludes(project, "default") is byte-identical; later
+    // space switches still rewrite the same concrete segment in place.
+    const posixPath = srcPath.split(sep).join("/");
+    if (
+      harness === "cursor" &&
+      posixPath.includes("/agents/") &&
+      posixPath.endsWith("-agent.md")
+    ) {
+      s = s.replaceAll("aidlc/spaces/<active-space>/memory/", "aidlc/spaces/default/memory/");
+    }
     return Buffer.from(s, "utf-8");
   }
   return content;
@@ -901,20 +913,31 @@ function buildPluginProjection(pluginName: string, harnessName: string, outDir: 
   //    right harness tree.
   const hooksDir = join(outDir, "hooks");
   mkdirSync(hooksDir, { recursive: true });
-  for (const f of readdirSync(templateHooks)) cpSync(join(templateHooks, f), join(hooksDir, f));
+  for (const f of readdirSync(templateHooks)) {
+    if (f === "aidlc-plugin-compose.ts" && kind !== "cursor") continue;
+    cpSync(join(templateHooks, f), join(hooksDir, f));
+  }
   // biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell parameter expansions
   const rootExpr = harnessName === "claude" ? "${CLAUDE_PLUGIN_ROOT}" : "${PLUGIN_ROOT}";
-  const composePath = kind === "cursor" ? "./hooks/compose.ts" : `${rootExpr}/hooks/compose.ts`;
-  // Probe aidlc on PATH first, then bun on PATH / ~/.bun/bin. If neither is
-  // executable, exit 0 with a note rather than running a non-existent binary.
-  const aidlcExpr =
-    'AIDLC=$(command -v aidlc 2>/dev/null || true); ' +
-    `[ -n "$AIDLC" ] && { AIDLC_HARNESS_DIR=${harnessLeaf} "$AIDLC" plugin sync && exit 0; }; `;
-  const bunExpr =
-    'BUN=$(command -v bun 2>/dev/null || true); ' +
-    '[ -z "$BUN" ] && [ -x "$HOME/.bun/bin/bun" ] && BUN="$HOME/.bun/bin/bun"; ' +
-    '[ -z "$BUN" ] && { echo "aidlc plugin compose: aidlc and bun not found, skipping" >&2; exit 0; }';
-  const command = `sh -c '${aidlcExpr}${bunExpr}; AIDLC_HARNESS_DIR=${harnessLeaf} "$BUN" "${composePath}"'`;
+  let command: string;
+  if (kind === "cursor") {
+    // Cursor runs on native Windows too. Its hook command invokes a Bun script
+    // directly; the launcher probes aidlc and falls back to sibling compose.ts
+    // without relying on sh, command -v, or POSIX parameter expansion.
+    command = `bun ./hooks/aidlc-plugin-compose.ts ${harnessLeaf}`;
+  } else {
+    const composePath = `${rootExpr}/hooks/compose.ts`;
+    // Probe aidlc on PATH first, then bun on PATH / ~/.bun/bin. If neither is
+    // executable, exit 0 with a note rather than running a non-existent binary.
+    const aidlcExpr =
+      'AIDLC=$(command -v aidlc 2>/dev/null || true); ' +
+      `[ -n "$AIDLC" ] && { AIDLC_HARNESS_DIR=${harnessLeaf} "$AIDLC" plugin sync && exit 0; }; `;
+    const bunExpr =
+      'BUN=$(command -v bun 2>/dev/null || true); ' +
+      '[ -z "$BUN" ] && [ -x "$HOME/.bun/bin/bun" ] && BUN="$HOME/.bun/bin/bun"; ' +
+      '[ -z "$BUN" ] && { echo "aidlc plugin compose: aidlc and bun not found, skipping" >&2; exit 0; }';
+    command = `sh -c '${aidlcExpr}${bunExpr}; AIDLC_HARNESS_DIR=${harnessLeaf} "$BUN" "${composePath}"'`;
+  }
 
   if (kind === "kiro") {
     writeFileSync(

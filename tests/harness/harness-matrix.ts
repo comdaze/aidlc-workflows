@@ -88,7 +88,7 @@ const HARNESS_CAPABILITIES = {
       fills: "onboarding.fills.ts",
       dist: "AGENTS.md",
     },
-    rootFiles: [".gitignore", "AGENTS.md"],
+    rootFiles: [".gitignore", "AGENTS.md", "install.ts"],
     skillsRoot: ".cursor/skills",
     plugin: {
       kind: "cursor",

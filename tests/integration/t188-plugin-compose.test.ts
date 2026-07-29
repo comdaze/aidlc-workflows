@@ -178,9 +178,15 @@ describe("t188 plugin compose — emit + compose the contribution seam", () => {
         join(built, harness.capabilities.plugin.wiringFile),
         "utf-8",
       );
-      expect(wiring, `${harness.name}: harness dir wiring`).toContain(
-        `AIDLC_HARNESS_DIR=${harness.manifest.harnessDir}`,
-      );
+      if (harness.name === "cursor") {
+        expect(wiring, `${harness.name}: harness dir argument`).toContain(
+          `aidlc-plugin-compose.ts ${harness.manifest.harnessDir}`,
+        );
+      } else {
+        expect(wiring, `${harness.name}: harness dir wiring`).toContain(
+          `AIDLC_HARNESS_DIR=${harness.manifest.harnessDir}`,
+        );
+      }
       expect(existsSync(join(built, "stages", "construction", "test-pro-integration.md"))).toBe(
         true,
       );
@@ -216,12 +222,12 @@ describe("t188 plugin compose — emit + compose the contribution seam", () => {
     expect(entries).toHaveLength(1);
     expect(Object.keys(entries[0] ?? {})).toEqual(["command"]);
     const command = String(entries[0]?.command ?? "");
-    expect(command).toContain("AIDLC_HARNESS_DIR=.cursor");
-    expect(command).toContain('"$BUN" "./hooks/compose.ts"');
-    expect(command).not.toContain("$" + "{PLUGIN_ROOT}");
+    expect(command).toBe("bun ./hooks/aidlc-plugin-compose.ts .cursor");
+    expect(command).not.toContain("sh -c");
+    expect(existsSync(join(built, "hooks", "aidlc-plugin-compose.ts"))).toBe(true);
   });
 
-  test("Cursor's direct composer fallback resolves its plugin root from the hook path", () => {
+  test("Cursor's cross-platform launcher resolves its plugin root from the hook path", () => {
     const built = pluginBuilds.get("cursor")!;
     const cursorProject = join(tmp, "cursor-compose");
     cpSync(CURSOR_DIST, cursorProject, { recursive: true });
@@ -233,12 +239,17 @@ describe("t188 plugin compose — emit + compose the contribution seam", () => {
     env.AIDLC_PROJECT_DIR = cursorProject;
     env.AIDLC_HARNESS_DIR = ".cursor";
 
-    const compose = spawnSync(BUN, [join(built, "hooks", "compose.ts")], {
-      cwd: cursorProject,
-      encoding: "utf-8",
-      timeout: TIMEOUT_MS - 5_000,
-      env,
-    });
+    env.PATH = "";
+    const compose = spawnSync(
+      BUN,
+      [join(built, "hooks", "aidlc-plugin-compose.ts"), ".cursor"],
+      {
+        cwd: cursorProject,
+        encoding: "utf-8",
+        timeout: TIMEOUT_MS - 5_000,
+        env,
+      },
+    );
     expect(compose.status, compose.stderr).toBe(0);
     const cursorGraph = JSON.parse(
       readFileSync(join(cursorProject, ".cursor", "tools", "data", "stage-graph.json"), "utf-8"),

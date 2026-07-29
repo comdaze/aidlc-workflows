@@ -19,21 +19,32 @@
 //   3. No duplicate delivery (unlike Codex) and a REAL sessionEnd event
 //      (unlike Codex/Copilot) — no replay cache, no heartbeat reconcile.
 //   4. subagentStart/subagentStop are documented but NEVER fire on the CLI
-//      (live-verified): subagent tracking rides preToolUse/postToolUse of the
-//      Task tool (tool_input.subagent_type carries the agent name), and
-//      subagent-side tool calls carry NO agent identity — only a fresh
-//      conversation_id. A tmpdir ledger written at Task-spawn time restores
-//      the reviewer's identity for the reviewer-scope bound (single-reviewer
-//      dispatch is the 12a contract, so last-spawn attribution is sound).
+//      (live-verified): subagent tracking rides Task tool events. Subagent-side
+//      calls carry no identity and no usable lineage (transcript_path is null
+//      at preToolUse time and, when present, names the subagent's OWN
+//      conversation, never its parent). What IS reliable: sessionStart and
+//      beforeSubmitPrompt fire ONLY for top-level conversations — a Task
+//      subagent runs without either. The adapter therefore keeps a tmpdir
+//      registry of known top-level conversations plus one record per Task
+//      spawn, and attributes a call to the subagent only when its conversation
+//      is not a known top-level one while spawn records are live.
 //
 // Usage (wired in .cursor/hooks.json, cwd = project root):
 //   bun .cursor/hooks/aidlc-cursor-adapter.ts <target>
 // where <target> ∈ session-start | session-end | mint | guards |
-//                  audit-and-sensors | runtime-compile | validate-state |
-//                  stop
+//                  audit-and-sensors | task-failure | runtime-compile |
+//                  validate-state | stop
 
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  statSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -43,12 +54,15 @@ const HOOKS_DIR = dirname(fileURLToPath(import.meta.url));
 interface CursorHookInput {
   hook_event_name?: string;
   conversation_id?: string;
+  generation_id?: string;
   session_id?: string;
   cwd?: string;
   workspace_roots?: string[];
+  transcript_path?: string | null;
   tool_name?: string;
   tool_input?: Record<string, unknown>;
   tool_output?: unknown;
+  tool_use_id?: string;
   reason?: string;
   source?: string;
   is_background_agent?: boolean;
@@ -71,14 +85,19 @@ export async function run(
   }
 
   const projectDirRaw =
-    process.env.AIDLC_PROJECT_DIR ?? cursor.workspace_roots?.[0] ?? process.cwd();
+    process.env.AIDLC_PROJECT_DIR ??
+    process.env.CURSOR_PROJECT_DIR ??
+    process.env.CLAUDE_PROJECT_DIR ??
+    process.cwd();
   const projectDir = isAbsolute(projectDirRaw)
     ? projectDirRaw
     : resolve(process.cwd(), projectDirRaw);
+  const sessionId = cursor.session_id ?? cursor.conversation_id;
   const projectEnv = {
     ...process.env,
     AIDLC_PROJECT_DIR: projectDir,
     CLAUDE_PROJECT_DIR: projectDir,
+    CURSOR_PROJECT_DIR: projectDir,
   };
 
   // --- Core-hook subprocess plumbing ------------------------------------------
@@ -123,59 +142,169 @@ export async function run(
   // --- Subagent-identity ledger -------------------------------------------------
   //
   // Cursor delivers NO agent identity on a subagent's own tool calls, and the
-  // subagentStart/Stop events never fire on the CLI. The Task-tool calls in the
-  // MAIN conversation do carry tool_input.subagent_type, so the guards target
-  // records the spawn (name + the parent's conversation_id) here at preToolUse
-  // time; a later guard event whose conversation_id differs from the recorded
-  // parent while the ledger is fresh is attributed to that subagent. The 12a
-  // reviewer contract dispatches ONE reviewer at a time, so last-spawn
-  // attribution is sound for the reviewer-scope bound; ambiguity from parallel
-  // spawns only widens enforcement to more calls, never blocks the conductor
-  // (identity must MATCH dispatch.reviewer for the core hook to enforce).
+  // subagentStart/Stop events never fire on the CLI. Its payloads carry no
+  // parent lineage either: transcript_path is null at preToolUse time and,
+  // when present (postToolUse), names the subagent's OWN conversation
+  // (agent-transcripts/<own-conversation>/<own-conversation>.jsonl — flat,
+  // live-verified). What IS reliable, live-verified both ways: sessionStart
+  // and beforeSubmitPrompt fire ONLY for top-level conversations, never for a
+  // Task subagent's. So the adapter keeps two kinds of tmpdir markers:
+  //   - a MAIN marker per top-level conversation (written at sessionStart,
+  //     beforeSubmitPrompt, and for a Task spawn's own parent), and
+  //   - one spawn RECORD per in-flight Task (agent + parent + task id).
+  // A guard event is attributed to the subagent only when live spawn records
+  // exist, they all name ONE agent, and the event's conversation is not a
+  // known main. Ambiguity (concurrent spawns of different agents) fails open —
+  // the 12a contract dispatches a single reviewer at a time, so the enforced
+  // case stays unambiguous. Each attributed call refreshes the record mtimes
+  // so a long-running reviewer never silently outlives the freshness window.
   const LEDGER_TTL_MS = 30 * 60 * 1000;
-  const ledgerFile = join(
-    tmpdir(),
-    `aidlc-cursor-subagent-${createHash("sha256").update(projectDir).digest("hex").slice(0, 16)}.json`,
-  );
+  const ledgerPrefix =
+    `aidlc-cursor-subagent-${createHash("sha256").update(projectDir).digest("hex").slice(0, 16)}-`;
+
+  interface SubagentRecord {
+    agent: string;
+    parent: string;
+    task: string;
+  }
+
+  function digest(value: string): string {
+    return createHash("sha256").update(value).digest("hex").slice(0, 16);
+  }
+
+  function taskIdentity(): string {
+    return cursor.tool_use_id ?? cursor.generation_id ?? "";
+  }
+
+  function ledgerFile(parent: string, task: string): string {
+    return join(tmpdir(), `${ledgerPrefix}${digest(parent)}-${digest(task)}.json`);
+  }
+
+  function mainFile(conversation: string): string {
+    return join(tmpdir(), `${ledgerPrefix}main-${digest(conversation)}.marker`);
+  }
+
+  function ledgerFiles(): string[] {
+    try {
+      return readdirSync(tmpdir())
+        .filter((name) => name.startsWith(ledgerPrefix) && name.endsWith(".json"))
+        .map((name) => join(tmpdir(), name));
+    } catch {
+      return [];
+    }
+  }
+
+  function removeLedger(path: string): void {
+    try {
+      rmSync(path, { force: true });
+    } catch {
+      // best-effort; stale records also expire via TTL
+    }
+  }
+
+  function touchMarker(path: string): void {
+    const now = new Date();
+    try {
+      utimesSync(path, now, now);
+    } catch {
+      writeFileSync(path, "", "utf-8");
+    }
+  }
+
+  function registerMain(): void {
+    const conversation = cursor.conversation_id ?? "";
+    if (!conversation) return;
+    try {
+      touchMarker(mainFile(conversation));
+    } catch {
+      // best-effort — a missed marker only risks widening enforcement, and
+      // only while a spawn record is live
+    }
+  }
+
+  function isKnownMain(conversation: string): boolean {
+    try {
+      const path = mainFile(conversation);
+      if (Date.now() - statSync(path).mtimeMs > LEDGER_TTL_MS) return false;
+      // Every event from a known main refreshes it: staleness is bounded by
+      // inactivity, so a long autonomous stretch cannot expire into
+      // misattribution while another conversation's reviewer is live.
+      touchMarker(path);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function readRecord(path: string): SubagentRecord | null {
+    try {
+      if (Date.now() - statSync(path).mtimeMs > LEDGER_TTL_MS) {
+        removeLedger(path);
+        return null;
+      }
+      const record = JSON.parse(readFileSync(path, "utf-8")) as Partial<SubagentRecord>;
+      if (!record.agent || !record.parent || !record.task) return null;
+      return record as SubagentRecord;
+    } catch {
+      return null;
+    }
+  }
 
   function recordSpawn(subagentType: string): void {
+    const parent = cursor.conversation_id ?? "";
+    const task = taskIdentity();
+    if (!parent || !task) return;
+    registerMain(); // spawning a Task proves this conversation is a main
+    const path = ledgerFile(parent, task);
+    const pending = `${path}.${process.pid}.tmp`;
     try {
-      writeFileSync(
-        ledgerFile,
-        JSON.stringify({ agent: subagentType, parent: cursor.conversation_id ?? "" }),
-        "utf-8",
-      );
+      writeFileSync(pending, JSON.stringify({ agent: subagentType, parent, task }), "utf-8");
+      renameSync(pending, path);
     } catch {
+      removeLedger(pending);
       // best-effort — enforcement degrades to main-session-only
     }
   }
 
   function clearSpawn(): void {
-    try {
-      rmSync(ledgerFile, { force: true });
-    } catch {
-      // stale ledger expires via TTL
+    const parent = cursor.conversation_id ?? "";
+    const task = taskIdentity();
+    if (!parent) return;
+    if (task) {
+      removeLedger(ledgerFile(parent, task));
+      return;
+    }
+    // Defensive fallback for a completion payload that omits tool_use_id:
+    // clear only this parent conversation's records.
+    for (const path of ledgerFiles()) {
+      if (readRecord(path)?.parent === parent) removeLedger(path);
     }
   }
 
   function activeSubagent(): string {
-    try {
-      if (!existsSync(ledgerFile)) return "";
-      if (Date.now() - statSync(ledgerFile).mtimeMs > LEDGER_TTL_MS) return "";
-      const led = JSON.parse(readFileSync(ledgerFile, "utf-8")) as {
-        agent?: string;
-        parent?: string;
-      };
-      if (!led.agent) return "";
-      // A guard event from a conversation OTHER than the spawning parent's is
-      // the subagent's own call.
-      if (led.parent && cursor.conversation_id && cursor.conversation_id !== led.parent) {
-        return led.agent;
-      }
-      return "";
-    } catch {
-      return "";
+    const conversation = cursor.conversation_id ?? "";
+    if (!conversation || isKnownMain(conversation)) return "";
+    const live: Array<{ path: string; record: SubagentRecord }> = [];
+    for (const path of ledgerFiles()) {
+      const record = readRecord(path);
+      if (record) live.push({ path, record });
     }
+    if (live.length === 0) return "";
+    // A conversation that spawned a live Task is a main even if its marker
+    // write failed.
+    if (live.some(({ record }) => record.parent === conversation)) return "";
+    const agents = new Set(live.map(({ record }) => record.agent));
+    if (agents.size !== 1) return "";
+    // Keep an actively-working subagent attributed past the TTL: freshness
+    // bounds idle staleness, not legitimate long reviews.
+    for (const { path } of live) {
+      try {
+        utimesSync(path, new Date(), new Date());
+      } catch {
+        // expiry only widens back to fail-open
+      }
+    }
+    return live[0].record.agent;
   }
 
   // Cursor's shell tool is "Shell"; the core hooks key on Claude's "Bash".
@@ -197,12 +326,18 @@ export async function run(
   // Those paths keep the real name.
   const reviewerToolName = toolName === "Delete" ? "Write" : toolName;
 
+  let attributedAgent: string | null = null;
+  function attributed(): string {
+    attributedAgent ??= activeSubagent();
+    return attributedAgent;
+  }
+
   function claudeShaped(eventName: string, nameOverride?: string): string {
     return JSON.stringify({
       ...cursor,
       hook_event_name: eventName,
       tool_name: nameOverride ?? toolName,
-      ...(activeSubagent() ? { agent_type: activeSubagent() } : {}),
+      ...(attributed() ? { agent_type: attributed() } : {}),
     });
   }
 
@@ -210,10 +345,13 @@ export async function run(
 
   switch (target) {
     case "session-start": {
+      // sessionStart never fires for a Task subagent's conversation
+      // (live-verified) — this conversation is a top-level one.
+      registerMain();
       const fwd = JSON.stringify({
         hook_event_name: "SessionStart",
         source: cursor.source ?? "startup",
-        ...(cursor.session_id ? { session_id: cursor.session_id } : {}),
+        ...(sessionId ? { session_id: sessionId } : {}),
       });
       const r = runCore("aidlc-session-start.ts", fwd);
       // Core prints {"additionalContext"} (Claude's key); Cursor consumes
@@ -233,27 +371,46 @@ export async function run(
       const fwd = JSON.stringify({
         hook_event_name: "SessionEnd",
         reason: cursor.reason ?? "other",
-        ...(cursor.session_id ? { session_id: cursor.session_id } : {}),
+        ...(sessionId ? { session_id: sessionId } : {}),
       });
       runCore("aidlc-session-end.ts", fwd);
+      // The conversation is over — retire its main marker AND its spawn
+      // records. This is the RELIABLE clear point: live probes show
+      // postToolUse (and so postToolUseFailure) never delivering for the Task
+      // tool on the CLI (cursor-agent 2026.07.23 fires them for Read/Write/
+      // Shell but not Task), so without this a completed Task's attribution
+      // would linger until the TTL. The postToolUse/postToolUseFailure clears
+      // stay wired for harness versions that do deliver them.
+      if (cursor.conversation_id) {
+        removeLedger(mainFile(cursor.conversation_id));
+        for (const path of ledgerFiles()) {
+          if (readRecord(path)?.parent === cursor.conversation_id) removeLedger(path);
+        }
+      }
       return 0;
     }
 
     case "mint": {
-      // beforeSubmitPrompt: a real human acted this turn.
+      // beforeSubmitPrompt fires only for top-level conversations
+      // (live-verified) — register this one as a main either way.
+      registerMain();
+      // A Cursor background agent submits prompts with no human present; its
+      // turn must not mint HUMAN_TURN (the approval gates' presence evidence).
+      if (cursor.is_background_agent === true) return 0;
+      // A real human acted this turn.
       runCore("aidlc-mint-presence.ts", JSON.stringify({ hook_event_name: "UserPromptSubmit" }));
       // Cursor's sessionStart fires only for a new conversation and carries no
       // startup/resume discriminator. Probe the core resume-rebind logic here,
       // where the same session_id is available. beforeSubmitPrompt cannot
       // inject context, so block this one submission through its documented
       // user_message channel when the active intent drifted.
-      if (cursor.session_id) {
+      if (sessionId) {
         const r = runCore(
           "aidlc-session-start.ts",
           JSON.stringify({
             hook_event_name: "SessionStart",
             source: "resume",
-            session_id: cursor.session_id,
+            session_id: sessionId,
             rebind_check: true,
           }),
         );
@@ -336,6 +493,13 @@ export async function run(
         runCore("aidlc-log-subagent.ts", fwd);
         clearSpawn();
       }
+      return 0;
+    }
+
+    case "task-failure": {
+      // postToolUseFailure: failed Task calls do not pass through postToolUse,
+      // so remove their attribution record here. Other failed tools are no-ops.
+      if (toolName === "Task") clearSpawn();
       return 0;
     }
 

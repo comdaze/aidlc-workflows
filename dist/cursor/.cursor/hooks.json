@@ -17,6 +17,9 @@
       { "command": "bun .cursor/hooks/aidlc-cursor-adapter.ts audit-and-sensors" },
       { "command": "bun .cursor/hooks/aidlc-cursor-adapter.ts runtime-compile" }
     ],
+    "postToolUseFailure": [
+      { "command": "bun .cursor/hooks/aidlc-cursor-adapter.ts task-failure" }
+    ],
     "preCompact": [
       { "command": "bun .cursor/hooks/aidlc-cursor-adapter.ts validate-state" }
     ],

@@ -30,11 +30,13 @@ import { spawnSync } from "node:child_process";
 import {
   cpSync,
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
   rmSync,
   statSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -114,6 +116,7 @@ describe("t250 dist/cursor packaging parity + shell shape", () => {
     expect(events).toEqual([
       "beforeSubmitPrompt",
       "postToolUse",
+      "postToolUseFailure",
       "preCompact",
       "preToolUse",
       "sessionEnd",
@@ -151,6 +154,10 @@ describe("t250 dist/cursor packaging parity + shell shape", () => {
       // Cursor discovers subagents by frontmatter name; the core name key is
       // the discovery key and must survive projection.
       expect(fm, `${f}: discoverable name`).toMatch(/^name: aidlc-/m);
+      // Default-space startup must not rewrite the shipped persona files.
+      expect(raw, `${f}: concrete default memory pointer`).not.toContain(
+        "aidlc/spaces/<active-space>/memory/",
+      );
     }
   });
 
@@ -197,17 +204,130 @@ describe("t250 dist/cursor packaging parity + shell shape", () => {
     }
   });
 
-  test("9: Cursor install docs copy directory contents without nesting existing targets", () => {
+  test("9: Cursor installer merges shared surfaces without overwriting project files", () => {
+    const root = mkdtempSync(join(tmpdir(), "t250-cursor-install-"));
+    const project = join(root, "project");
+    try {
+      const cursorDir = join(project, ".cursor");
+      mkdirSync(cursorDir, { recursive: true });
+      writeFileSync(
+        join(cursorDir, "hooks.json"),
+        `${JSON.stringify({
+          version: 1,
+          hooks: { sessionStart: [{ command: "bun .cursor/hooks/project-hook.ts" }] },
+        }, null, 2)}\n`,
+      );
+      writeFileSync(
+        join(cursorDir, "cli.json"),
+        `${JSON.stringify({
+          permissions: { allow: ["Shell(git)"], deny: ["Shell(rm)"] },
+          projectSetting: true,
+        }, null, 2)}\n`,
+      );
+      writeFileSync(join(cursorDir, ".gitignore"), "project-cursor-cache\n");
+      writeFileSync(join(project, "AGENTS.md"), "# Project instructions\n");
+      writeFileSync(join(project, ".gitignore"), "coverage/\n");
+
+      const install = spawnSync("bun", [join(CURSOR_ROOT, "install.ts"), project], {
+        cwd: REPO_ROOT,
+        encoding: "utf-8",
+      });
+      expect(install.status, install.stderr).toBe(0);
+
+      const hooks = JSON.parse(readFileSync(join(cursorDir, "hooks.json"), "utf-8")) as {
+        hooks: Record<string, Array<{ command: string }>>;
+      };
+      expect(hooks.hooks.sessionStart.map((entry) => entry.command)).toContain(
+        "bun .cursor/hooks/project-hook.ts",
+      );
+      expect(hooks.hooks.sessionStart.map((entry) => entry.command)).toContain(
+        "bun .cursor/hooks/aidlc-cursor-adapter.ts session-start",
+      );
+      expect(hooks.hooks.postToolUseFailure).toHaveLength(1);
+
+      const cli = JSON.parse(readFileSync(join(cursorDir, "cli.json"), "utf-8")) as {
+        permissions: { allow: string[]; deny: string[] };
+        projectSetting: boolean;
+      };
+      expect(cli.projectSetting).toBe(true);
+      expect(cli.permissions.allow).toEqual(["Shell(git)", "Shell(bun)"]);
+      expect(cli.permissions.deny).toEqual(["Shell(rm)"]);
+      expect(readFileSync(join(cursorDir, ".gitignore"), "utf-8")).toBe(
+        "project-cursor-cache\n",
+      );
+      expect(readFileSync(join(project, "AGENTS.md"), "utf-8")).toContain(
+        "# Project instructions",
+      );
+      expect(readFileSync(join(project, "AGENTS.md"), "utf-8")).toContain(
+        "<!-- BEGIN AIDLC CURSOR -->",
+      );
+      expect(readFileSync(join(project, ".gitignore"), "utf-8")).toContain("coverage/");
+      expect(readFileSync(join(project, ".gitignore"), "utf-8")).toContain(
+        "aidlc/active-space",
+      );
+
+      const before = readFileSync(join(cursorDir, "hooks.json"), "utf-8");
+      const rerun = spawnSync("bun", [join(CURSOR_ROOT, "install.ts"), project], {
+        cwd: REPO_ROOT,
+        encoding: "utf-8",
+      });
+      expect(rerun.status, rerun.stderr).toBe(0);
+      expect(readFileSync(join(cursorDir, "hooks.json"), "utf-8")).toBe(before);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("10: Cursor installer refuses malformed shared config before copying", () => {
+    const root = mkdtempSync(join(tmpdir(), "t250-cursor-install-malformed-"));
+    const project = join(root, "project");
+    try {
+      mkdirSync(join(project, ".cursor"), { recursive: true });
+      writeFileSync(join(project, ".cursor", "hooks.json"), "{not json");
+      writeFileSync(join(project, "AGENTS.md"), "# Keep me\n");
+      const install = spawnSync("bun", [join(CURSOR_ROOT, "install.ts"), project], {
+        cwd: REPO_ROOT,
+        encoding: "utf-8",
+      });
+      expect(install.status).toBe(1);
+      expect(install.stderr).toContain("malformed JSON");
+      expect(readFileSync(join(project, "AGENTS.md"), "utf-8")).toBe("# Keep me\n");
+      expect(existsSync(join(project, ".cursor", "tools"))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("11: Cursor installer refuses unresolved file collisions before copying", () => {
+    const root = mkdtempSync(join(tmpdir(), "t250-cursor-install-collision-"));
+    const project = join(root, "project");
+    try {
+      mkdirSync(join(project, ".cursor", "rules"), { recursive: true });
+      writeFileSync(join(project, ".cursor", "rules", "aidlc.mdc"), "project-owned\n");
+      writeFileSync(join(project, "AGENTS.md"), "# Keep me\n");
+      const install = spawnSync("bun", [join(CURSOR_ROOT, "install.ts"), project], {
+        cwd: REPO_ROOT,
+        encoding: "utf-8",
+      });
+      expect(install.status).toBe(1);
+      expect(install.stderr).toContain("refusing to overwrite");
+      expect(install.stderr).toContain(".cursor/rules/aidlc.mdc");
+      expect(readFileSync(join(project, "AGENTS.md"), "utf-8")).toBe("# Keep me\n");
+      expect(existsSync(join(project, ".cursor", "tools"))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("12: Cursor install docs use the merge-aware installer", () => {
     for (const file of [
       join(REPO_ROOT, "README.md"),
       join(REPO_ROOT, "docs", "guide", "harnesses", "cursor.md"),
     ]) {
       const raw = readFileSync(file, "utf-8");
-      expect(raw, file).toContain("mkdir -p your-project/.cursor your-project/aidlc");
-      expect(raw, file).toContain("cp -R dist/cursor/.cursor/. your-project/.cursor/");
-      expect(raw, file).toContain("cp -R dist/cursor/aidlc/.   your-project/aidlc/");
-      expect(raw, file).not.toContain("cp -r dist/cursor/.cursor/ your-project/.cursor/");
-      expect(raw, file).not.toContain("cp -r dist/cursor/aidlc/");
+      expect(raw, file).toContain("bun dist/cursor/install.ts your-project");
+      expect(raw, file).not.toContain("cp -R dist/cursor/.cursor");
+      expect(raw, file).not.toContain("cp dist/cursor/AGENTS.md");
     }
   });
 });

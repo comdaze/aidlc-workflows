@@ -26,7 +26,16 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
@@ -53,7 +62,7 @@ const scratch: string[] = [];
 
 afterEach(() => {
   for (const dir of scratch.splice(0)) {
-    rmSync(ledgerFileFor(dir), { force: true });
+    clearLedger(dir);
     rmSync(dir, { recursive: true, force: true });
   }
 });
@@ -67,12 +76,20 @@ function installedProject(): string {
 }
 
 /** The adapter's tmpdir subagent ledger for a project (must mirror the
- *  adapter's own derivation). */
-function ledgerFileFor(projectDir: string): string {
-  return join(
-    tmpdir(),
-    `aidlc-cursor-subagent-${createHash("sha256").update(projectDir).digest("hex").slice(0, 16)}.json`,
-  );
+ *  adapter's own derivation). Spawn records are `.json`; main-conversation
+ *  markers are `.marker`. */
+function ledgerFilesFor(projectDir: string, suffix = ".json"): string[] {
+  const prefix =
+    `aidlc-cursor-subagent-${createHash("sha256").update(projectDir).digest("hex").slice(0, 16)}-`;
+  return readdirSync(tmpdir())
+    .filter((name) => name.startsWith(prefix) && name.endsWith(suffix))
+    .map((name) => join(tmpdir(), name));
+}
+
+function clearLedger(projectDir: string): void {
+  for (const suffix of [".json", ".marker"]) {
+    for (const file of ledgerFilesFor(projectDir, suffix)) rmSync(file, { force: true });
+  }
 }
 
 function payload(name: string, projectDir: string, extra: Record<string, unknown> = {}): string {
@@ -89,15 +106,28 @@ function runAdapter(
   projectDir: string,
   target: string,
   stdin: string,
+  options: {
+    cwd?: string;
+    env?: Record<string, string | undefined>;
+  } = {},
 ): { stdout: string; stderr: string; code: number } {
+  const env: Record<string, string | undefined> = {
+    ...process.env,
+    AIDLC_PROJECT_DIR: projectDir,
+    AIDLC_HARNESS_DIR: ".cursor",
+    ...options.env,
+  };
+  for (const [key, value] of Object.entries(env)) {
+    if (value === undefined) delete env[key];
+  }
   const r = spawnSync(
     "bun",
     [join(projectDir, ".cursor", "hooks", "aidlc-cursor-adapter.ts"), target],
     {
-      cwd: projectDir,
+      cwd: options.cwd ?? projectDir,
       input: stdin,
       encoding: "utf-8",
-      env: { ...process.env, AIDLC_PROJECT_DIR: projectDir, AIDLC_HARNESS_DIR: ".cursor" },
+      env: env as NodeJS.ProcessEnv,
     },
   );
   return { stdout: r.stdout ?? "", stderr: r.stderr ?? "", code: r.status ?? 0 };
@@ -148,11 +178,11 @@ describe("t251 cursor adapter payload conversion", () => {
     expect(r.stdout.trim()).toBe("");
   });
 
-  test("5: Task spawn feeds the identity ledger; a foreign-conversation call is attributed and scope-enforced", () => {
+  test("5: Task attribution binds unknown conversations only; registered mains are never conflated", () => {
     const proj = installedProject();
     seedStateFile(proj, "state-construction.md");
     const record = seededRecordDir(proj);
-    rmSync(ledgerFileFor(proj), { force: true });
+    clearLedger(proj);
     // 12a step-1: the conductor's dispatch record scopes the reviewer to
     // unit-a; unit-b is a sibling.
     mkdirSync(join(record, "construction", "unit-b"), { recursive: true });
@@ -165,12 +195,35 @@ describe("t251 cursor adapter payload conversion", () => {
         exempt: [],
       }),
     );
+    // An INDEPENDENT top-level conversation announces itself the way every
+    // real one does: sessionStart fires for it (subagents never get one).
+    runAdapter(
+      proj,
+      "session-start",
+      payload("sessionStart", proj, {
+        conversation_id: "11111111-2222-4333-8444-555555555555",
+        session_id: "11111111-2222-4333-8444-555555555555",
+      }),
+    );
     // Spawn: the MAIN conversation's Task call records the ledger entry.
     const spawn = runAdapter(proj, "guards", payload("preToolUseTask", proj));
     expect(spawn.code).toBe(0);
-    expect(existsSync(ledgerFileFor(proj))).toBe(true);
-    // The reviewer's own Read (different conversation_id, no identity in the
-    // payload) targets a SIBLING unit -> deny JSON with the scope reason.
+    expect(ledgerFilesFor(proj)).toHaveLength(1);
+    // The registered independent conversation must not inherit the reviewer
+    // identity (the review round-1 conflation repro).
+    const unrelated = runAdapter(
+      proj,
+      "guards",
+      payload("preToolUseSubagentRead", proj, {
+        conversation_id: "11111111-2222-4333-8444-555555555555",
+        session_id: "11111111-2222-4333-8444-555555555555",
+        tool_input: { file_path: join(record, "construction", "unit-b", "design.md") },
+      }),
+    );
+    expect(unrelated.code).toBe(0);
+    expect(unrelated.stdout.trim()).toBe("");
+    // The reviewer's own Read (fresh conversation_id, no sessionStart, no
+    // identity fields — the live subagent shape) is scope-enforced.
     const sibling = runAdapter(
       proj,
       "guards",
@@ -185,7 +238,7 @@ describe("t251 cursor adapter payload conversion", () => {
     // Completion clears the ledger...
     const done = runAdapter(proj, "audit-and-sensors", payload("postToolUseTask", proj));
     expect(done.code).toBe(0);
-    expect(existsSync(ledgerFileFor(proj))).toBe(false);
+    expect(ledgerFilesFor(proj)).toHaveLength(0);
     // ...and the same sibling read now passes through (no identity -> not the
     // dispatched reviewer -> core hook allows).
     const after = runAdapter(
@@ -230,13 +283,16 @@ describe("t251 cursor adapter payload conversion", () => {
   test("7: a delegated conversation cannot spawn a nested Task or overwrite the parent ledger", () => {
     const proj = installedProject();
     seedStateFile(proj, "state-construction.md");
-    const ledger = ledgerFileFor(proj);
-    rmSync(ledger, { force: true });
+    clearLedger(proj);
 
     const parent = runAdapter(proj, "guards", payload("preToolUseTask", proj));
     expect(parent.code).toBe(0);
+    const [ledger] = ledgerFilesFor(proj);
     const before = readFileSync(ledger, "utf-8");
 
+    // The subagent's own Task attempt arrives as every subagent call does
+    // live: a fresh conversation_id that never saw sessionStart, and no
+    // lineage fields.
     const nested = runAdapter(
       proj,
       "guards",
@@ -257,17 +313,25 @@ describe("t251 cursor adapter payload conversion", () => {
     expect(readFileSync(ledger, "utf-8")).toBe(before);
   });
 
-  test("8: beforeSubmitPrompt surfaces a one-time rebind offer after intent drift", () => {
+  test("8: beforeSubmitPrompt rebind falls back from session_id to conversation_id", () => {
     const proj = installedProject();
     const a = birthIntent(proj, "intent-a", "default", "feature");
     const b = birthIntent(proj, "intent-b", "default", "feature");
     setActiveIntentCursor(proj, a.dirName, "default");
 
-    const started = runAdapter(proj, "session-start", payload("sessionStart", proj));
+    const started = runAdapter(
+      proj,
+      "session-start",
+      payload("sessionStart", proj, { session_id: undefined }),
+    );
     expect(started.code).toBe(0);
     setActiveIntentCursor(proj, b.dirName, "default");
 
-    const warned = runAdapter(proj, "mint", payload("beforeSubmitPrompt", proj));
+    const warned = runAdapter(
+      proj,
+      "mint",
+      payload("beforeSubmitPrompt", proj, { session_id: undefined }),
+    );
     expect(warned.code).toBe(0);
     const out = JSON.parse(warned.stdout) as { continue?: boolean; user_message?: string };
     expect(out.continue).toBe(false);
@@ -278,7 +342,11 @@ describe("t251 cursor adapter payload conversion", () => {
 
     // The blocked warning is consumed: resubmitting continues on B instead of
     // deadlocking on the same beforeSubmitPrompt response.
-    const next = runAdapter(proj, "mint", payload("beforeSubmitPrompt", proj));
+    const next = runAdapter(
+      proj,
+      "mint",
+      payload("beforeSubmitPrompt", proj, { session_id: undefined }),
+    );
     expect(next.code).toBe(0);
     expect(next.stdout.trim()).toBe("");
     const shard = readAllAuditShards(proj);
@@ -298,17 +366,159 @@ describe("t251 cursor adapter payload conversion", () => {
     expect(readAllAuditShards(proj)).toContain("HUMAN_TURN");
   });
 
-  test("10: sessionEnd forwards the reason into SESSION_ENDED", () => {
+  test("10: concurrent parents keep isolated records; spawning parents are never attributed; mixed agents fail open", () => {
     const proj = installedProject();
     seedStateFile(proj, "state-construction.md");
+    const record = seededRecordDir(proj);
+    clearLedger(proj);
+    mkdirSync(join(record, "construction", "unit-b"), { recursive: true });
+    writeFileSync(
+      join(record, ".aidlc-reviewer-dispatch.json"),
+      JSON.stringify({
+        reviewer: "aidlc-architecture-reviewer-agent",
+        stage: "functional-design",
+        unit: "unit-a",
+        exempt: [],
+      }),
+    );
+    const siblingRead = (extra: Record<string, unknown>) =>
+      runAdapter(
+        proj,
+        "guards",
+        payload("preToolUseSubagentRead", proj, {
+          tool_input: { file_path: join(record, "construction", "unit-b", "design.md") },
+          ...extra,
+        }),
+      );
+
+    // Two top-level conversations each dispatch the reviewer. Every real
+    // main fires sessionStart before it can spawn a Task (subagents never
+    // do) — registering B is what keeps its spawn from reading as nested
+    // delegation while A's record is live.
+    runAdapter(proj, "guards", payload("preToolUseTask", proj));
+    runAdapter(
+      proj,
+      "session-start",
+      payload("sessionStart", proj, {
+        conversation_id: "parent-conversation-b",
+        session_id: "parent-conversation-b",
+      }),
+    );
+    runAdapter(
+      proj,
+      "guards",
+      payload("preToolUseTask", proj, {
+        conversation_id: "parent-conversation-b",
+        session_id: "parent-conversation-b",
+        generation_id: "task-generation-b",
+        tool_use_id: "task-use-b",
+      }),
+    );
+    expect(ledgerFilesFor(proj)).toHaveLength(2);
+
+    // A registered parent's own reads stay unattributed.
+    const parentB = siblingRead({
+      conversation_id: "parent-conversation-b",
+      session_id: "parent-conversation-b",
+    });
+    expect(parentB.stdout.trim()).toBe("");
+    // An unknown conversation (the live subagent shape) is attributed while
+    // both records name the same agent...
+    expect(JSON.parse(siblingRead({}).stdout).permission).toBe("deny");
+
+    // ...and parent A's completion clears only A's record; enforcement holds
+    // through B's still-live dispatch.
+    runAdapter(proj, "audit-and-sensors", payload("postToolUseTask", proj));
+    expect(ledgerFilesFor(proj)).toHaveLength(1);
+    expect(JSON.parse(siblingRead({}).stdout).permission).toBe("deny");
+
+    // A third registered parent dispatching a DIFFERENT agent makes identity
+    // ambiguous: the adapter fails open rather than guessing.
+    runAdapter(
+      proj,
+      "session-start",
+      payload("sessionStart", proj, {
+        conversation_id: "parent-conversation-c",
+        session_id: "parent-conversation-c",
+      }),
+    );
+    runAdapter(
+      proj,
+      "guards",
+      payload("preToolUseTask", proj, {
+        conversation_id: "parent-conversation-c",
+        session_id: "parent-conversation-c",
+        generation_id: "task-generation-c",
+        tool_use_id: "task-use-c",
+        tool_input: {
+          description: "Developer probe",
+          prompt: "Implement the unit.",
+          subagent_type: "aidlc-developer-agent",
+        },
+      }),
+    );
+    expect(ledgerFilesFor(proj)).toHaveLength(2);
+    expect(siblingRead({}).stdout.trim()).toBe("");
+  });
+
+  test("11: postToolUseFailure clears only the failed Task record", () => {
+    const proj = installedProject();
+    seedStateFile(proj, "state-construction.md");
+    runAdapter(proj, "guards", payload("preToolUseTask", proj));
+    expect(ledgerFilesFor(proj)).toHaveLength(1);
+
+    const failed = runAdapter(proj, "task-failure", payload("postToolUseTask", proj));
+    expect(failed.code).toBe(0);
+    expect(ledgerFilesFor(proj)).toHaveLength(0);
+  });
+
+  test("12: project hook cwd wins over workspace_roots when no project env is set", () => {
+    const adapterProject = installedProject();
+    const actualProject = installedProject();
+    seedStateFile(actualProject, "state-construction.md");
+    const stdin = payload("sessionStart", adapterProject, {
+      workspace_roots: [adapterProject],
+    });
+    const r = runAdapter(adapterProject, "session-start", stdin, {
+      cwd: actualProject,
+      env: {
+        AIDLC_PROJECT_DIR: undefined,
+        CURSOR_PROJECT_DIR: undefined,
+        CLAUDE_PROJECT_DIR: undefined,
+      },
+    });
+    expect(r.code).toBe(0);
+    expect(readAllAuditShards(actualProject)).toContain("SESSION_STARTED");
+  });
+
+  test("13: sessionEnd forwards the reason into SESSION_ENDED and clears the conversation's spawn records", () => {
+    const proj = installedProject();
+    seedStateFile(proj, "state-construction.md");
+    clearLedger(proj);
+    // Live CLI never delivers postToolUse/postToolUseFailure for the Task
+    // tool, so sessionEnd is the reliable clear point for this conversation's
+    // attribution records.
+    const endConversation = JSON.parse(payload("sessionEnd", proj)) as {
+      conversation_id?: string;
+    };
+    runAdapter(
+      proj,
+      "guards",
+      payload("preToolUseTask", proj, {
+        conversation_id: endConversation.conversation_id,
+        session_id: endConversation.conversation_id,
+      }),
+    );
+    expect(ledgerFilesFor(proj)).toHaveLength(1);
     const r = runAdapter(proj, "session-end", payload("sessionEnd", proj));
     expect(r.code).toBe(0);
+    expect(ledgerFilesFor(proj)).toHaveLength(0);
     const shard = readFileSync(seededAuditShard(proj), "utf-8");
     expect(shard).toContain("SESSION_ENDED");
     expect(shard).toContain("completed");
   });
 
-  test("11: stop converts a core block into an advisory followup_message", () => {
+  test("14: stop converts a core block into an advisory followup_message", () => {
     const proj = installedProject();
     seedStateFile(proj, "state-construction.md");
     // An in-flight stage (state seeded mid-construction with no completed
@@ -325,7 +535,7 @@ describe("t251 cursor adapter payload conversion", () => {
     }
   });
 
-  test("12: malformed stdin fails open on every target", () => {
+  test("15: malformed stdin fails open on every target", () => {
     const proj = installedProject();
     for (const target of [
       "session-start",
@@ -333,6 +543,7 @@ describe("t251 cursor adapter payload conversion", () => {
       "mint",
       "guards",
       "audit-and-sensors",
+      "task-failure",
       "runtime-compile",
       "validate-state",
       "stop",
@@ -342,11 +553,11 @@ describe("t251 cursor adapter payload conversion", () => {
     }
   });
 
-  test("14: Cursor's Delete tool is reviewer-scope-enforced as a write", () => {
+  test("16: Cursor's Delete tool is reviewer-scope-enforced as a write", () => {
     const proj = installedProject();
     seedStateFile(proj, "state-construction.md");
     const record = seededRecordDir(proj);
-    rmSync(ledgerFileFor(proj), { force: true });
+    clearLedger(proj);
     mkdirSync(join(record, "construction", "unit-b"), { recursive: true });
     writeFileSync(
       join(record, ".aidlc-reviewer-dispatch.json"),
@@ -362,7 +573,8 @@ describe("t251 cursor adapter payload conversion", () => {
     // "Delete" is Cursor-only (every other harness removes files through the
     // shell). The reviewer-scope allowlist never mentions it, so without the
     // adapter's reviewer-side rename a scoped reviewer could delete a SIBLING
-    // unit's artifacts unchallenged.
+    // unit's artifacts unchallenged. The call arrives in the live subagent
+    // shape: an unknown conversation_id, no lineage fields.
     const del = runAdapter(
       proj,
       "guards",
@@ -390,7 +602,7 @@ describe("t251 cursor adapter payload conversion", () => {
     expect(own.stdout.trim()).toBe("");
   });
 
-  test("15: Delete keeps its real name for the state-transition guard", () => {
+  test("17: Delete keeps its real name for the state-transition guard", () => {
     const proj = installedProject();
     const captureFile = join(proj, "state-transition-input.json");
     writeFileSync(
@@ -413,10 +625,48 @@ describe("t251 cursor adapter payload conversion", () => {
     expect(forwarded.tool_name).toBe("Delete");
   });
 
-  test("13: unknown target is a silent no-op (wiring typo cannot break a turn)", () => {
+  test("18: unknown target is a silent no-op (wiring typo cannot break a turn)", () => {
     const proj = installedProject();
     const r = runAdapter(proj, "no-such-target", payload("sessionStart", proj));
     expect(r.code).toBe(0);
     expect(r.stdout.trim()).toBe("");
+  });
+
+  test("19: a background agent's prompt never mints HUMAN_TURN", () => {
+    const proj = installedProject();
+    seedStateFile(proj, "state-construction.md");
+    seedAuditFile(proj);
+    const bg = runAdapter(
+      proj,
+      "mint",
+      payload("beforeSubmitPrompt", proj, { is_background_agent: true }),
+    );
+    expect(bg.code).toBe(0);
+    expect(readAllAuditShards(proj)).not.toContain("HUMAN_TURN");
+    // The same payload from a human-driven conversation does mint.
+    const human = runAdapter(proj, "mint", payload("beforeSubmitPrompt", proj));
+    expect(human.code).toBe(0);
+    expect(readAllAuditShards(proj)).toContain("HUMAN_TURN");
+  });
+
+  test("20: an attributed call refreshes the spawn record so a long review outlives the TTL", () => {
+    const proj = installedProject();
+    seedStateFile(proj, "state-construction.md");
+    clearLedger(proj);
+    runAdapter(proj, "guards", payload("preToolUseTask", proj));
+    const [record] = ledgerFilesFor(proj);
+    // Backdate the record to one minute inside the 30-minute freshness window.
+    const nearExpiry = new Date(Date.now() - 29 * 60 * 1000);
+    utimesSync(record, nearExpiry, nearExpiry);
+    // The working subagent's next call (unknown conversation) re-touches it.
+    const r = runAdapter(
+      proj,
+      "guards",
+      payload("preToolUseSubagentRead", proj, {
+        tool_input: { file_path: join(proj, "README.md") },
+      }),
+    );
+    expect(r.code).toBe(0);
+    expect(Date.now() - statSync(record).mtimeMs).toBeLessThan(60 * 1000);
   });
 });

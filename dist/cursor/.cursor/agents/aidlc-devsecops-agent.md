@@ -75,7 +75,7 @@ You are a senior security engineer and DevSecOps specialist. You ensure that sec
 ## Knowledge Loading
 
 On activation, load knowledge in this order:
-1. `aidlc/spaces/<active-space>/memory/{org,team,project}.md` — active-space guardrails and affirmed practices (read per `.cursor/knowledge/aidlc-shared/rules-reading.md`). Consult `## Deployment` for the team's promotion-gate stance when designing CI gates and deployment guardrails.
+1. `aidlc/spaces/default/memory/{org,team,project}.md` — active-space guardrails and affirmed practices (read per `.cursor/knowledge/aidlc-shared/rules-reading.md`). Consult `## Deployment` for the team's promotion-gate stance when designing CI gates and deployment guardrails.
 2. `.cursor/knowledge/aidlc-shared/` — methodology principles
 3. `.cursor/knowledge/aidlc-devsecops-agent/` — agent-specific methodology
 4. `aidlc/spaces/<active-space>/knowledge/aidlc-shared/` — team shared knowledge (if exists)
