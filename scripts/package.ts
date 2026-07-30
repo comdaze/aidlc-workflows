@@ -388,12 +388,18 @@ const MEMORY_SEED_DST = join("tools", "data", "memory-seed");
 const ACTIVE_SPACE_REL = join("aidlc", "active-space");
 const ACTIVE_SPACE_VALUE = "default\n";
 
-// Write tools/data/harness.json from manifest data. Today it carries just the
-// rules-subdir (the one rename the runtime must know per-tree); the object shape
-// leaves room for future per-harness runtime facts. Pretty-printed + trailing
-// newline so the committed file is diff-friendly and stable under --check.
+// Write tools/data/harness.json from manifest data. The runtime reads the
+// rules-subdir and any host-native generated-runner frontmatter from this
+// open-set descriptor. Pretty-printed + trailing newline keeps committed
+// output diff-friendly and stable under --check.
 function writeHarnessData(treeRoot: string, m: HarnessManifest): void {
-  const data = { harnessDir: m.harnessDir, rulesSubdir: m.rulesRename ?? "rules" };
+  const data = {
+    harnessDir: m.harnessDir,
+    rulesSubdir: m.rulesRename ?? "rules",
+    ...(m.runnerFrontmatterAdditions?.length
+      ? { runnerFrontmatterAdditions: m.runnerFrontmatterAdditions }
+      : {}),
+  };
   const dst = join(treeRoot, HARNESS_DATA);
   mkdirSync(dirname(dst), { recursive: true });
   writeFileSync(dst, `${JSON.stringify(data, null, 2)}\n`);

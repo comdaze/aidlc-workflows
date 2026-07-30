@@ -11,7 +11,7 @@ A native implementation of the **AI-DLC methodology** (AI-Driven Development Lif
 
 The methodology lives once, in a harness-neutral `core/`; each harness adds a thin surface that decides how it shows up on that harness. So you edit the methodology in one place, and every harness distribution is generated from it — no harness gets special treatment. (See [Repository layout](#repository-layout) for how the pieces fit together.)
 
-![version](https://img.shields.io/badge/version-2.5.14-blue)
+![version](https://img.shields.io/badge/version-2.5.15-blue)
 ![license](https://img.shields.io/badge/license-MIT--0-green)
 ![Kiro IDE](https://img.shields.io/badge/harness-Kiro%20IDE-orange)
 ![Kiro CLI](https://img.shields.io/badge/harness-Kiro%20CLI-orange)
@@ -265,9 +265,11 @@ bun dist/cursor/install.ts your-project
 
 The `aidlc/` shell ships the pre-built `aidlc/spaces/default/memory/` method tree the engine reads; `/aidlc --doctor` fails its "workspace shell ready" check without it.
 
-The installer refuses unresolved file collisions, preserves `.cursor/.gitignore`,
-merges `.cursor/hooks.json` hook arrays and `.cursor/cli.json` permission arrays,
-and adds marked AI-DLC sections to existing `AGENTS.md` and `.gitignore` files.
+The installer refuses project-owned file collisions, preserves
+`.cursor/.gitignore` and existing method memory, merges `.cursor/hooks.json`
+hook arrays and `.cursor/cli.json` permission arrays, and adds marked AI-DLC
+sections to existing `AGENTS.md` and `.gitignore` files. Re-running it upgrades
+framework-managed files while preserving the active-space pointer.
 Then verify:
 
 ```bash

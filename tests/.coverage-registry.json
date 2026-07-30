@@ -2711,6 +2711,18 @@
     },
     {
       "unitClass": "function",
+      "unitId": "function:runnerFrontmatterAdditions",
+      "minMechanism": "none",
+      "coveredBy": [
+        {
+          "file": "tests/unit/t250-cursor-packaging.test.ts",
+          "mechanism": "cli"
+        }
+      ],
+      "status": "covered"
+    },
+    {
+      "unitClass": "function",
       "unitId": "function:runtimeGraphPath",
       "minMechanism": "none",
       "coveredBy": [],

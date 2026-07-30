@@ -95,6 +95,12 @@ export type HarnessManifest = {
    */
   frontmatterAdditions?: Array<{ file: string; lines: string[] }>;
   /**
+   * Harness-native YAML fields appended to every generated stage/scope runner
+   * skill. The packager persists these in tools/data/harness.json so runner
+   * regeneration during plugin composition applies the same host contract.
+   */
+  runnerFrontmatterAdditions?: string[];
+  /**
    * How to render this harness's onboarding doc from core/templates/onboarding.md.
    * null when the harness generates it elsewhere (codex, via emit) or ships none.
    */

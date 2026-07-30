@@ -366,7 +366,7 @@ describe("t251 cursor adapter payload conversion", () => {
     expect(readAllAuditShards(proj)).toContain("HUMAN_TURN");
   });
 
-  test("10: concurrent parents keep isolated records; spawning parents are never attributed; mixed agents fail open", () => {
+  test("10: concurrent parents stay isolated and mixed reviewer attribution remains scope-enforced", () => {
     const proj = installedProject();
     seedStateFile(proj, "state-construction.md");
     const record = seededRecordDir(proj);
@@ -433,7 +433,9 @@ describe("t251 cursor adapter payload conversion", () => {
     expect(JSON.parse(siblingRead({}).stdout).permission).toBe("deny");
 
     // A third registered parent dispatching a DIFFERENT agent makes identity
-    // ambiguous: the adapter fails open rather than guessing.
+    // ambiguous. Because one live identity is the dispatched reviewer, the
+    // adapter conservatively applies that reviewer scope instead of failing
+    // open and permitting the sibling read.
     runAdapter(
       proj,
       "session-start",
@@ -458,7 +460,7 @@ describe("t251 cursor adapter payload conversion", () => {
       }),
     );
     expect(ledgerFilesFor(proj)).toHaveLength(2);
-    expect(siblingRead({}).stdout.trim()).toBe("");
+    expect(JSON.parse(siblingRead({}).stdout).permission).toBe("deny");
   });
 
   test("11: postToolUseFailure clears only the failed Task record", () => {
@@ -535,7 +537,7 @@ describe("t251 cursor adapter payload conversion", () => {
     }
   });
 
-  test("15: malformed stdin fails open on every target", () => {
+  test("15: malformed stdin denies guards and remains advisory elsewhere", () => {
     const proj = installedProject();
     for (const target of [
       "session-start",
@@ -549,7 +551,12 @@ describe("t251 cursor adapter payload conversion", () => {
       "stop",
     ]) {
       const r = runAdapter(proj, target, "{not json");
-      expect(r.code, `${target}: fails open`).toBe(0);
+      expect(r.code).toBe(0);
+      if (target === "guards") {
+        expect(JSON.parse(r.stdout).permission).toBe("deny");
+      } else {
+        expect(r.stdout.trim(), `${target}: advisory malformed input`).toBe("");
+      }
     }
   });
 
@@ -668,5 +675,74 @@ describe("t251 cursor adapter payload conversion", () => {
     );
     expect(r.code).toBe(0);
     expect(Date.now() - statSync(record).mtimeMs).toBeLessThan(60 * 1000);
+  });
+
+  test("21: a new same-parent Task retires a stale lead record before reviewer dispatch", () => {
+    const proj = installedProject();
+    seedStateFile(proj, "state-construction.md");
+    seedAuditFile(proj);
+    clearLedger(proj);
+    const record = seededRecordDir(proj);
+    mkdirSync(join(record, "construction", "unit-b"), { recursive: true });
+    writeFileSync(
+      join(record, ".aidlc-reviewer-dispatch.json"),
+      JSON.stringify({
+        reviewer: "aidlc-architecture-reviewer-agent",
+        stage: "functional-design",
+        unit: "unit-a",
+        exempt: [],
+      }),
+    );
+
+    const developer = runAdapter(
+      proj,
+      "guards",
+      payload("preToolUseTask", proj, {
+        tool_input: {
+          description: "Implement",
+          prompt: "Implement unit-a.",
+          subagent_type: "aidlc-developer-agent",
+        },
+      }),
+    );
+    expect(developer.code).toBe(0);
+    expect(ledgerFilesFor(proj)).toHaveLength(1);
+
+    // Cursor emits no postToolUse for the developer Task. The parent's next
+    // synchronous Task dispatch is therefore the first conclusive completion
+    // signal available to the adapter.
+    const reviewer = runAdapter(
+      proj,
+      "guards",
+      payload("preToolUseTask", proj, {
+        generation_id: "review-generation",
+        tool_use_id: "review-tool-use",
+      }),
+    );
+    expect(reviewer.code).toBe(0);
+    expect(ledgerFilesFor(proj)).toHaveLength(1);
+    expect(readAllAuditShards(proj)).toContain("SUBAGENT_COMPLETED");
+    expect(readAllAuditShards(proj)).toContain("aidlc-developer-agent");
+
+    const sibling = runAdapter(
+      proj,
+      "guards",
+      payload("preToolUseSubagentRead", proj, {
+        tool_input: { file_path: join(record, "construction", "unit-b", "design.md") },
+      }),
+    );
+    expect(JSON.parse(sibling.stdout).permission).toBe("deny");
+  });
+
+  test("22: an unavailable child guard denies the operation", () => {
+    const proj = installedProject();
+    seedStateFile(proj, "state-construction.md");
+    rmSync(join(proj, ".cursor", "hooks", "aidlc-reviewer-scope.ts"));
+
+    const r = runAdapter(proj, "guards", payload("preToolUseShell", proj));
+    expect(r.code).toBe(0);
+    const out = JSON.parse(r.stdout) as { permission?: string; agent_message?: string };
+    expect(out.permission).toBe("deny");
+    expect(out.agent_message ?? "").toContain("aidlc-reviewer-scope.ts failed");
   });
 });

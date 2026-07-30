@@ -17,9 +17,9 @@
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   HARNESS_MATRIX,
@@ -255,6 +255,59 @@ describe("t188 plugin compose — emit + compose the contribution seam", () => {
       readFileSync(join(cursorProject, ".cursor", "tools", "data", "stage-graph.json"), "utf-8"),
     ) as GraphStage[];
     expect(cursorGraph.some((item) => item.slug === "test-pro-integration")).toBe(true);
+  });
+
+  test("Cursor launcher passes its plugin root through the installed aidlc branch", () => {
+    const built = pluginBuilds.get("cursor")!;
+    const cursorProject = join(tmp, "cursor-compose-installed-aidlc");
+    cpSync(CURSOR_DIST, cursorProject, { recursive: true });
+    const binDir = join(tmp, "cursor-fake-bin");
+    mkdirSync(binDir, { recursive: true });
+    const aidlc = join(binDir, "aidlc");
+    writeFileSync(
+      aidlc,
+      [
+        "#!/bin/sh",
+        `exec ${JSON.stringify(BUN)} ${JSON.stringify(
+          join(cursorProject, ".cursor", "tools", "aidlc.ts"),
+        )} "$@"`,
+        "",
+      ].join("\n"),
+    );
+    chmodSync(aidlc, 0o755);
+
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      PATH: `${binDir}${delimiter}${process.env.PATH ?? ""}`,
+      AIDLC_PROJECT_DIR: cursorProject,
+      AIDLC_HARNESS_DIR: ".cursor",
+    };
+    delete env.CLAUDE_PLUGIN_ROOT;
+    delete env.PLUGIN_ROOT;
+    delete env.AIDLC_PLUGIN_ROOT;
+    delete env.CLAUDE_PROJECT_DIR;
+
+    const compose = spawnSync(
+      BUN,
+      [join(built, "hooks", "aidlc-plugin-compose.ts"), ".cursor"],
+      {
+        cwd: cursorProject,
+        encoding: "utf-8",
+        timeout: TIMEOUT_MS - 5_000,
+        env,
+      },
+    );
+    expect(compose.status, compose.stderr || compose.stdout).toBe(0);
+    expect(compose.stdout).toContain("plugin sync complete: 1 plugin(s)");
+    const cursorGraph = JSON.parse(
+      readFileSync(join(cursorProject, ".cursor", "tools", "data", "stage-graph.json"), "utf-8"),
+    ) as GraphStage[];
+    expect(cursorGraph.some((item) => item.slug === "test-pro-integration")).toBe(true);
+    const pluginRunner = readFileSync(
+      join(cursorProject, ".cursor", "skills", "test-pro-integration", "SKILL.md"),
+      "utf-8",
+    );
+    expect(pluginRunner).toMatch(/^disable-model-invocation: true$/m);
   });
 
   test("OpenCode compose emits plugin agents to both inline and native rosters", () => {

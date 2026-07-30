@@ -1,6 +1,6 @@
 // t250-cursor-packaging: dist/cursor parity + drift guard + shell shape.
 //
-// covers: file:tools/aidlc-lib.ts
+// covers: file:tools/aidlc-lib.ts, function:runnerFrontmatterAdditions
 //
 // WHAT. Five contracts land here:
 //   (1) The committed dist/cursor tree is byte-identical to what
@@ -109,7 +109,7 @@ describe("t250 dist/cursor packaging parity + shell shape", () => {
   test("4: hooks.json wires only camelCase Cursor events, every command through the adapter", () => {
     const wiring = JSON.parse(readFileSync(join(ENGINE, "hooks.json"), "utf-8")) as {
       version: number;
-      hooks: Record<string, Array<{ command: string }>>;
+      hooks: Record<string, Array<{ command: string; failClosed?: boolean }>>;
     };
     expect(wiring.version).toBe(1);
     const events = Object.keys(wiring.hooks).sort();
@@ -139,6 +139,12 @@ describe("t250 dist/cursor packaging parity + shell shape", () => {
     for (const target of targets) {
       expect(adapter, `adapter handles "${target}"`).toContain(`case "${target}":`);
     }
+    expect(wiring.hooks.preToolUse).toEqual([
+      {
+        command: "bun .cursor/hooks/aidlc-cursor-adapter.ts guards",
+        failClosed: true,
+      },
+    ]);
   });
 
   test("5: persona files are native-subagent-safe - no model pins, no tier leak", () => {
@@ -235,7 +241,7 @@ describe("t250 dist/cursor packaging parity + shell shape", () => {
       expect(install.status, install.stderr).toBe(0);
 
       const hooks = JSON.parse(readFileSync(join(cursorDir, "hooks.json"), "utf-8")) as {
-        hooks: Record<string, Array<{ command: string }>>;
+        hooks: Record<string, Array<{ command: string; failClosed?: boolean }>>;
       };
       expect(hooks.hooks.sessionStart.map((entry) => entry.command)).toContain(
         "bun .cursor/hooks/project-hook.ts",
@@ -244,6 +250,7 @@ describe("t250 dist/cursor packaging parity + shell shape", () => {
         "bun .cursor/hooks/aidlc-cursor-adapter.ts session-start",
       );
       expect(hooks.hooks.postToolUseFailure).toHaveLength(1);
+      expect(hooks.hooks.preToolUse[0]?.failClosed).toBe(true);
 
       const cli = JSON.parse(readFileSync(join(cursorDir, "cli.json"), "utf-8")) as {
         permissions: { allow: string[]; deny: string[] };
@@ -329,5 +336,90 @@ describe("t250 dist/cursor packaging parity + shell shape", () => {
       expect(raw, file).not.toContain("cp -R dist/cursor/.cursor");
       expect(raw, file).not.toContain("cp dist/cursor/AGENTS.md");
     }
+  });
+
+  test("13: Cursor installer upgrades managed files after active-space repointing", () => {
+    const root = mkdtempSync(join(tmpdir(), "t250-cursor-upgrade-"));
+    const project = join(root, "project");
+    try {
+      const installer = join(CURSOR_ROOT, "install.ts");
+      const first = spawnSync("bun", [installer, project], {
+        cwd: REPO_ROOT,
+        encoding: "utf-8",
+      });
+      expect(first.status, first.stderr).toBe(0);
+
+      const utility = join(project, ".cursor", "tools", "aidlc-utility.ts");
+      const utilityEnv = { ...process.env, AIDLC_HARNESS_DIR: ".cursor" };
+      const create = spawnSync(
+        "bun",
+        [utility, "space-create", "team-b", "--project-dir", project],
+        { cwd: project, encoding: "utf-8", env: utilityEnv },
+      );
+      expect(create.status, create.stderr).toBe(0);
+      const switchSpace = spawnSync(
+        "bun",
+        [utility, "space", "team-b", "--project-dir", project],
+        { cwd: project, encoding: "utf-8", env: utilityEnv },
+      );
+      expect(switchSpace.status, switchSpace.stderr).toBe(0);
+
+      // Simulate an install made by the reviewed pre-receipt installer.
+      rmSync(join(project, ".cursor", "aidlc-install.json"), { force: true });
+      const managed = join(project, ".cursor", "hooks", "aidlc-cursor-adapter.ts");
+      writeFileSync(managed, "// stale managed adapter\n");
+      const projectMemory = join(
+        project,
+        "aidlc",
+        "spaces",
+        "default",
+        "memory",
+        "project.md",
+      );
+      writeFileSync(projectMemory, "# Project-owned method\n");
+
+      const upgrade = spawnSync("bun", [installer, project], {
+        cwd: REPO_ROOT,
+        encoding: "utf-8",
+      });
+      expect(upgrade.status, upgrade.stderr).toBe(0);
+      expect(readFileSync(managed).equals(
+        readFileSync(join(ENGINE, "hooks", "aidlc-cursor-adapter.ts")),
+      )).toBe(true);
+      expect(readFileSync(join(project, "aidlc", "active-space"), "utf-8").trim()).toBe(
+        "team-b",
+      );
+      expect(
+        readFileSync(join(project, ".cursor", "rules", "aidlc.mdc"), "utf-8"),
+      ).toContain("aidlc/spaces/team-b/memory/");
+      for (const agent of readdirSync(join(project, ".cursor", "agents"))) {
+        if (!agent.endsWith("-agent.md")) continue;
+        const shipped = readFileSync(join(ENGINE, "agents", agent), "utf-8");
+        const installed = readFileSync(join(project, ".cursor", "agents", agent), "utf-8");
+        if (shipped.includes("aidlc/spaces/default/memory/")) {
+          expect(installed, agent).toContain("aidlc/spaces/team-b/memory/");
+          expect(installed, agent).not.toContain("aidlc/spaces/default/memory/");
+        } else {
+          expect(installed, agent).toBe(shipped);
+        }
+      }
+      expect(readFileSync(projectMemory, "utf-8")).toBe("# Project-owned method\n");
+      expect(existsSync(join(project, ".cursor", "aidlc-install.json"))).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("14: generated Cursor runners are explicit-only", () => {
+    const generated: string[] = [];
+    for (const file of walk(join(ENGINE, "skills"))) {
+      if (!file.endsWith("SKILL.md")) continue;
+      const raw = readFileSync(file, "utf-8");
+      const fm = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1] ?? "";
+      if (!/^generated-by:\s*aidlc-runner-gen$/m.test(fm)) continue;
+      generated.push(file);
+      expect(fm, file).toMatch(/^disable-model-invocation:\s*true$/m);
+    }
+    expect(generated.length).toBeGreaterThan(0);
   });
 });

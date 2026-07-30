@@ -51,10 +51,13 @@ projection directly (no `emit.ts`, no split dot-dir). The distribution is:
    bun dist/cursor/install.ts your-project
    ```
 
-   The installer preflights the full copy, refuses unresolved collisions,
-   preserves `.cursor/.gitignore`, structurally merges existing
-   `.cursor/hooks.json` and `.cursor/cli.json`, and adds marked AI-DLC sections
-   to existing `AGENTS.md` and `.gitignore` files instead of replacing them.
+   The installer preflights the full copy, refuses project-owned collisions,
+   preserves `.cursor/.gitignore` and existing method memory, structurally
+   merges `.cursor/hooks.json` and `.cursor/cli.json`, and adds marked AI-DLC
+   sections to existing `AGENTS.md` and `.gitignore` files instead of replacing
+   them. It records framework ownership in `.cursor/aidlc-install.json`;
+   re-running it upgrades managed files while preserving `aidlc/active-space`
+   and reapplying that space to the mutable rule and persona pointers.
    The `aidlc/` shell ships the pre-built `aidlc/spaces/default/memory/` method
    tree the engine reads; `/aidlc --doctor` fails its "workspace shell ready"
    check without it.
@@ -74,9 +77,11 @@ projection directly (no `emit.ts`, no split dot-dir). The distribution is:
   core hook bodies (run as bun subprocesses): presence minting on each human turn, the
   state-transition and reviewer read-scope guards before a tool runs, audit +
   sensors on write/edit, failed-Task attribution cleanup, runtime-compile on
-  shell, and state validation before compaction. The **PreToolUse guards block** via Cursor's
-  `{"permission":"deny","agent_message":...}` stdout channel. Cursor names its
-  shell tool `Shell`; the adapter maps it to the core hooks' `Bash`. Cursor's
+  shell, and state validation before compaction. The **PreToolUse guards block**
+  via Cursor's `{"permission":"deny","agent_message":...}` stdout channel and
+  register `failClosed: true`; malformed input, a missing guard, or a crashing
+  guard denies the operation. Cursor names its shell tool `Shell`; the adapter
+  maps it to the core hooks' `Bash`. Cursor's
   first-class `Delete` tool (unique to this harness - everywhere else deletion
   goes through the shell) is presented to the reviewer-scope guard as a write so a
   unit-scoped reviewer cannot delete a sibling unit's artifacts.
@@ -97,9 +102,15 @@ projection directly (no `emit.ts`, no split dot-dir). The distribution is:
   never fire on the CLI), so the adapter maintains a tmpdir ledger: top-level
   conversations register themselves at `sessionStart`/`beforeSubmitPrompt`
   (subagent conversations get neither event), each Task spawn records its
-  agent, and reviewer read-scope enforcement attributes a call to the subagent
-  only when live spawn records name one agent and the calling conversation is
-  not a registered top-level one. Ambiguity fails open rather than blocking.
+  agent, and reviewer read-scope enforcement attributes calls from conversations
+  that are not registered top-level sessions. A parent's next synchronous Task
+  dispatch retires and logs its prior record (Cursor CLI emits no Task
+  `postToolUse`); genuine cross-parent ambiguity stays conservative whenever a
+  reviewer is live, so it cannot disable reviewer-scope enforcement.
+- **Generated stage and scope runners are explicit-only.** Cursor receives
+  `disable-model-invocation: true` on generated runner skills, including plugin
+  runners, so ordinary coding prompts cannot auto-activate state-mutating
+  workflow shortcuts.
 - **The method rule is a read instruction, not an import.** Cursor rules do not
   expand `@`-import lines, so `.cursor/rules/aidlc.mdc` (`alwaysApply`) tells the
   agent to read `aidlc/spaces/<space>/memory/*.md`, and the `sessionStart` hook

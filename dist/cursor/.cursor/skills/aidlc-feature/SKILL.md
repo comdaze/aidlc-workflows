@@ -7,6 +7,7 @@ description: >
   without this skill.
 argument-hint: "[description | --status | --stage <slug|#> | --phase <name|#>]"
 user-invocable: true
+disable-model-invocation: true
 ---
 
 # AI-DLC — feature scope

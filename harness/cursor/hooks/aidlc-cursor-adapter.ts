@@ -80,7 +80,14 @@ export async function run(
       rawInput = input;
       if (rawInput.length > 0) cursor = JSON.parse(rawInput) as CursorHookInput;
     } catch {
-      return 0; // malformed stdin — advisory hooks fail open
+      if (target === "guards") {
+        process.stdout.write(`${JSON.stringify({
+          permission: "deny",
+          agent_message:
+            "AIDLC guard input was malformed; the operation was denied because its safety checks could not run.",
+        })}\n`);
+      }
+      return 0;
     }
   }
 
@@ -135,7 +142,7 @@ export async function run(
     return {
       stdout: r.stdout?.toString() ?? "",
       stderr: r.stderr?.toString() ?? "",
-      code: r.exitCode ?? 0,
+      code: r.exitCode ?? 1,
     };
   }
 
@@ -153,12 +160,17 @@ export async function run(
   //     beforeSubmitPrompt, and for a Task spawn's own parent), and
   //   - one spawn RECORD per in-flight Task (agent + parent + task id).
   // A guard event is attributed to the subagent only when live spawn records
-  // exist, they all name ONE agent, and the event's conversation is not a
-  // known main. Ambiguity (concurrent spawns of different agents) fails open —
-  // the 12a contract dispatches a single reviewer at a time, so the enforced
-  // case stays unambiguous. Each attributed call refreshes the record mtimes
-  // so a long-running reviewer never silently outlives the freshness window.
+  // exist and the event's conversation is not a known main. A main's next
+  // synchronous Task dispatch proves its prior Task returned, so that prior
+  // record is retired before the new one is written. Genuine cross-parent
+  // ambiguity stays conservative when a reviewer is among the live agents:
+  // scope the call as that reviewer (or deny when multiple reviewer identities
+  // are possible) rather than silently disabling reviewer enforcement. Each
+  // attributed call refreshes the record mtimes so a long-running reviewer
+  // never silently outlives the freshness window.
   const LEDGER_TTL_MS = 30 * 60 * 1000;
+  const AMBIGUOUS_REVIEWER = "__aidlc_ambiguous_reviewer__";
+  const REVIEW_AGENT_RE = /^aidlc-(architecture-reviewer|product-lead)-agent$/;
   const ledgerPrefix =
     `aidlc-cursor-subagent-${createHash("sha256").update(projectDir).digest("hex").slice(0, 16)}-`;
 
@@ -255,6 +267,21 @@ export async function run(
     const task = taskIdentity();
     if (!parent || !task) return;
     registerMain(); // spawning a Task proves this conversation is a main
+    // Task is synchronous. If this parent can issue another Task, its previous
+    // delegate has returned even though Cursor CLI emits no postToolUse event
+    // for Task. Retire and log those records before opening the next dispatch.
+    for (const priorPath of ledgerFiles()) {
+      const prior = readRecord(priorPath);
+      if (prior?.parent !== parent) continue;
+      runCore(
+        "aidlc-log-subagent.ts",
+        JSON.stringify({
+          hook_event_name: "SubagentStop",
+          agent_type: prior.agent,
+        }),
+      );
+      removeLedger(priorPath);
+    }
     const path = ledgerFile(parent, task);
     const pending = `${path}.${process.pid}.tmp`;
     try {
@@ -293,17 +320,31 @@ export async function run(
     // A conversation that spawned a live Task is a main even if its marker
     // write failed.
     if (live.some(({ record }) => record.parent === conversation)) return "";
-    const agents = new Set(live.map(({ record }) => record.agent));
-    if (agents.size !== 1) return "";
-    // Keep an actively-working subagent attributed past the TTL: freshness
-    // bounds idle staleness, not legitimate long reviews.
-    for (const { path } of live) {
-      try {
-        utimesSync(path, new Date(), new Date());
-      } catch {
-        // expiry only widens back to fail-open
+    const refresh = () => {
+      // Keep an actively-working subagent attributed past the TTL: freshness
+      // bounds idle staleness, not legitimate long reviews.
+      for (const { path } of live) {
+        try {
+          utimesSync(path, new Date(), new Date());
+        } catch {
+          // expiry only widens back to fail-open
+        }
       }
+    };
+    const agents = new Set(live.map(({ record }) => record.agent));
+    if (agents.size !== 1) {
+      const reviewers = [...agents].filter((agent) => REVIEW_AGENT_RE.test(agent));
+      if (reviewers.length === 1) {
+        refresh();
+        return reviewers[0];
+      }
+      if (reviewers.length > 1) {
+        refresh();
+        return AMBIGUOUS_REVIEWER;
+      }
+      return "";
     }
+    refresh();
     return live[0].record.agent;
   }
 
@@ -333,11 +374,12 @@ export async function run(
   }
 
   function claudeShaped(eventName: string, nameOverride?: string): string {
+    const agent = attributed();
     return JSON.stringify({
       ...cursor,
       hook_event_name: eventName,
       tool_name: nameOverride ?? toolName,
-      ...(attributed() ? { agent_type: attributed() } : {}),
+      ...(agent && agent !== AMBIGUOUS_REVIEWER ? { agent_type: agent } : {}),
     });
   }
 
@@ -444,16 +486,27 @@ export async function run(
       if (toolName === "Task") {
         const parentAgent = activeSubagent();
         if (parentAgent) {
+          const identity =
+            parentAgent === AMBIGUOUS_REVIEWER ? "an ambiguously attributed reviewer" : parentAgent;
           process.stdout.write(`${JSON.stringify({
             permission: "deny",
             agent_message:
-              `AIDLC nested delegation is not allowed: ${parentAgent} must complete ` +
+              `AIDLC nested delegation is not allowed: ${identity} must complete ` +
               "its delegated task directly and cannot invoke Task.",
           })}\n`);
           return 0;
         }
         const sub = cursor.tool_input?.subagent_type;
         if (typeof sub === "string" && sub.length > 0) recordSpawn(sub);
+        return 0;
+      }
+      if (attributed() === AMBIGUOUS_REVIEWER) {
+        process.stdout.write(`${JSON.stringify({
+          permission: "deny",
+          agent_message:
+            "AIDLC reviewer identity is ambiguous across active Task dispatches; " +
+            "the operation was denied rather than bypassing reviewer-scope enforcement.",
+        })}\n`);
         return 0;
       }
       const guards = [
@@ -468,8 +521,12 @@ export async function run(
       ];
       for (const guard of guards) {
         const r = runCoreWithStderr(guard.file, guard.input);
-        if (r.code === 2) {
-          const reason = r.stderr.trim() || "blocked by AIDLC guard hook";
+        if (r.code !== 0) {
+          const reason =
+            r.code === 2
+              ? r.stderr.trim() || "blocked by AIDLC guard hook"
+              : `AIDLC guard ${guard.file} failed with exit ${r.code}; ` +
+                "the operation was denied because its safety checks could not complete.";
           process.stdout.write(`${JSON.stringify({ permission: "deny", agent_message: reason })}\n`);
           return 0;
         }

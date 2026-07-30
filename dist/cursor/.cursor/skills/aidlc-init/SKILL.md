@@ -9,6 +9,7 @@ description: >
   (defaults to poc), or a freeform description of what to build.
 argument-hint: "[--scope <name>] [description]"
 user-invocable: true
+disable-model-invocation: true
 ---
 
 # AI-DLC — start a workflow (birth the first intent)

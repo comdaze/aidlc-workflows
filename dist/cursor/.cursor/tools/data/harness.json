@@ -1,4 +1,7 @@
 {
   "harnessDir": ".cursor",
-  "rulesSubdir": "rules"
+  "rulesSubdir": "rules",
+  "runnerFrontmatterAdditions": [
+    "disable-model-invocation: true"
+  ]
 }

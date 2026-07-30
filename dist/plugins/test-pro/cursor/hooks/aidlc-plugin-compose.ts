@@ -9,7 +9,14 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const harnessDir = process.argv[2] || ".cursor";
-const env = { ...process.env, AIDLC_HARNESS_DIR: harnessDir };
+const pluginRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+const env = {
+  ...process.env,
+  AIDLC_HARNESS_DIR: harnessDir,
+  AIDLC_PLUGIN_ROOT: pluginRoot,
+  CLAUDE_PLUGIN_ROOT: pluginRoot,
+  PLUGIN_ROOT: pluginRoot,
+};
 const aidlc = Bun.which("aidlc");
 
 if (aidlc) {
@@ -20,7 +27,7 @@ if (aidlc) {
   if (synced.status === 0) process.exit(0);
 }
 
-const compose = join(dirname(fileURLToPath(import.meta.url)), "compose.ts");
+const compose = join(pluginRoot, "hooks", "compose.ts");
 const fallback = spawnSync(process.execPath, [compose], {
   env,
   stdio: "inherit",

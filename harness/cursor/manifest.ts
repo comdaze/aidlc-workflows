@@ -82,7 +82,11 @@ const manifest: HarnessManifest = {
   // lives there; core projects no rules/ dir, so nothing needs renaming.
   rulesRename: null,
 
-  // Runners generate into .cursor/skills/ — natively discovered.
+  // Runners generate into .cursor/skills/ and remain explicit-only. Cursor
+  // otherwise lets the model auto-activate a relevant skill even when
+  // user-invocable is true, which is unsafe for state-mutating stage runners.
+  runnerFrontmatterAdditions: ["disable-model-invocation: true"],
+
   emit: null,
 
   plugin: { manifestDir: ".cursor-plugin", kind: "cursor" },
