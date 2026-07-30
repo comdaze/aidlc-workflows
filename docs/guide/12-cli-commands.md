@@ -567,6 +567,48 @@ are never derived by hand.
 
 `bun .claude/tools/aidlc-utility.ts detect --json` prints the workspace scan (project type, languages, frameworks, build system, and a `submodules` array of any declared git submodules with their initialized state) plus the resolved scopes dir and scope-grid path. Pure read; the composer runs it to learn where scope data lives on the current harness.
 
+### `aidlc-workspace-sync` - clone and reconcile the declared repo set
+
+This is a **direct tool invocation**, not an `/aidlc workspace-sync` command. It
+reconciles a multi-repo workspace against the optional `repos.json` manifest at
+the workspace root (see
+[Declaring the repo set](03-spaces-and-intents.md#declaring-the-repo-set-optional-manifest)):
+
+```bash
+bun .claude/tools/aidlc-workspace-sync.ts [--force]
+bun .kiro/tools/aidlc-workspace-sync.ts [--force]
+bun .codex/tools/aidlc-workspace-sync.ts [--force]
+```
+
+It serializes reconciles with a workspace lock and runs a read-only preflight
+before staging clones and generated files. The staged transaction is installed
+with reversible same-filesystem renames, so an apply error rolls live paths back.
+The tool clones repos declared in `repos.json` but missing on disk, rewrites the
+managed block in the workspace `.gitignore` to one `/{name}/` line per repo, and
+writes an `aidlc.code-workspace` VSCode multi-root file listing the root plus
+each child repo. A declared `branch` is checked out for a new clone. Repos
+already on disk are never re-cloned or switched; a mismatch there remains an
+advisory.
+
+An orphan checkout (on disk but not in `repos.json`) blocks the run and is
+removed only when you pass `--force` and the tool can prove it has no local-only
+state. That proof overrides configurable status defaults, includes untracked and
+ignored files and directories (including empty directories), hidden index
+state, stashes, refs and reflogs, linked worktrees, submodules, and LFS object
+stores, and queries each real remote instead of trusting cached remote-tracking
+refs. A local remote stored inside the checkout cannot count as recovery. The
+proof runs again immediately before removal while the workspace lock is held.
+Any uncertainty blocks for manual review. Exit codes: `0` fully in sync, `1`
+blocked or error (live paths unchanged), `2` synced but advisory warnings remain
+(e.g. an existing checkout's branch mismatch).
+
+The manifest is optional and never overrides disk: intent birth still
+auto-discovers whatever sibling repos are actually present, so this tool only
+reproduces and tidies the declared set. `--doctor` carries three advisory rows
+about it (uncommitted `aidlc/` records, `repos.json` vs on-disk drift, and a
+stale managed `.gitignore` block); like all advisory rows they never change the
+doctor exit code.
+
 ### `aidlc-utility select-plugins` - install plugin selection
 
 `/aidlc plugin list` prints installed plugin names and whether each is enabled.
