@@ -1,7 +1,7 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
-## [2.5.32] - 2026-07-31
+## [2.5.34] - 2026-07-31
 
 Hardens the human-authorization boundary and adds unit-of-work lifecycle receipts, closing the reliability and authorization gaps reported in the brownfield Codex evaluation (issue 681). **Upgrade:** re-copy your `dist/<harness>/` tree into the project; if your CI drives gates against bare fixtures via the audit CLI, set `AIDLC_ALLOW_DIRECT_AUDIT_EVENTS=1` in those runs (the test suite sets it automatically).
 
