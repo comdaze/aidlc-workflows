@@ -146,7 +146,7 @@ The composer proposes; the human decides; the deterministic validator guards. Yo
 
 The engine resolves scope-level stage routing internally (it reads the compiled scope grid the table below summarises). The summary table is kept here as human-readable data — not dispatch logic — and is regenerated, never hand-edited. (One carve-out: the composer flow APPENDS approved composed scopes to the runtime scope registry (`{{HARNESS_DIR}}/scopes/aidlc-<name>.md` + a `scope-grid.json` entry) - that is the sanctioned write path for composed scopes, not a hand-edit; this summary table itself stays generated.) Source of truth: one file per scope under `{{HARNESS_DIR}}/scopes/aidlc-<name>.md` plus each stage's `scopes:` frontmatter, transposed at `bun {{HARNESS_DIR}}/tools/aidlc-graph.ts compile`; regenerate this table with `bun {{HARNESS_DIR}}/tools/aidlc-utility.ts scope-table`.
 
-<!-- BEGIN: compiled scope grid via `bun aidlc-utility.ts scope-table` — do NOT hand-edit -->
+<!-- BEGIN: compiled scope grid via `bun aidlc-utility.ts scope-table` - do NOT hand-edit -->
 
 | Scope          | Depth         | TestStrategy | EXECUTE / Total |
 |----------------|---------------|--------------|-----------------|
@@ -167,6 +167,8 @@ The engine resolves scope-level stage routing internally (it reads the compiled 
 ## Stage Graph
 
 The engine reads the compiled `data/stage-graph.json` directly for all routing; this table is the human-readable mirror of that graph (the 32 stages, their phase, execution mode, lead/support agents, and run mode) — data, not dispatch logic.
+
+<!-- BEGIN: compiled stage graph via `bun aidlc-utility.ts stage-table` - do NOT hand-edit -->
 
 | Slug | # | Stage | Phase | Execution | Lead Agent | Support Agents | Mode |
 |------|---|-------|-------|-----------|------------|----------------|------|
@@ -202,6 +204,8 @@ The engine reads the compiled `data/stage-graph.json` directly for all routing; 
 | incident-response | 4.5 | Incident Response | Operation | CONDITIONAL | aidlc-operations-agent | — | inline |
 | performance-validation | 4.6 | Performance Validation | Operation | CONDITIONAL | aidlc-quality-agent | — | inline |
 | feedback-optimization | 4.7 | Feedback & Optimization | Operation | CONDITIONAL | aidlc-operations-agent | aidlc-aws-platform-agent | inline |
+
+<!-- END: compiled stage graph -->
 
 ---
 

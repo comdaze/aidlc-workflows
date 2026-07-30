@@ -9,12 +9,10 @@
 // `bun dist/copilot/.aidlc/hooks/aidlc-copilot-adapter.ts <target>` inside a
 // scratch project carrying an active workflow state, then asserts the
 // observable core-hook effect:
-//   stop           → {"decision":"block"} when the engine says work remains
-//                    (verbatim passthrough — the contract is identical to
-//                    Claude Code); silent exit 0 with no state.
-//   session-start  → {"additionalContext": ...} passes through UNWRAPPED
-//                    (Copilot consumes the core hook's exact shape — no
-//                    hookSpecificOutput envelope, unlike codex).
+//   stop           → block fields at top level for CLI and under
+//                    hookSpecificOutput for VS Code; silent with no state.
+//   session-start  → additionalContext at top level for CLI and under
+//                    hookSpecificOutput for VS Code.
 //   pre-tool deny  → a guard block (core exit 2 + stderr) converts to the
 //                    {"hookSpecificOutput":{"permissionDecision":"deny"}}
 //                    stdout JSON with exit 0 — Copilot's only deny channel.
@@ -155,12 +153,19 @@ function runAdapter(
 }
 
 describe("t249 Copilot hook adapter (live-captured payload fixtures)", () => {
-  test("1: stop with active workflow blocks (verbatim Claude-shaped passthrough)", () => {
+  test("1: stop with active workflow blocks in both CLI and VS Code output shapes", () => {
     const dir = scratchProject(true);
     const r = runAdapter(dir, "stop", withCwd(FIXTURES.stop, dir));
-    const parsed = JSON.parse(r.stdout) as { decision?: string; reason?: string };
+    const parsed = JSON.parse(r.stdout) as {
+      decision?: string;
+      reason?: string;
+      hookSpecificOutput?: { hookEventName?: string; decision?: string; reason?: string };
+    };
     expect(parsed.decision).toBe("block");
     expect(parsed.reason?.length ?? 0).toBeGreaterThan(0);
+    expect(parsed.hookSpecificOutput?.hookEventName).toBe("Stop");
+    expect(parsed.hookSpecificOutput?.decision).toBe("block");
+    expect(parsed.hookSpecificOutput?.reason).toBe(parsed.reason);
   });
 
   test("2: stop without workflow state is a silent allow", () => {
@@ -170,13 +175,17 @@ describe("t249 Copilot hook adapter (live-captured payload fixtures)", () => {
     expect(r.stdout.trim()).toBe("");
   });
 
-  test("3: session-start context passes through UNWRAPPED (Copilot's native shape)", () => {
+  test("3: session-start context emits both CLI and VS Code output shapes", () => {
     const dir = scratchProject(true);
     const r = runAdapter(dir, "session-start", withCwd(FIXTURES.sessionStart, dir));
     expect(r.code).toBe(0);
-    const parsed = JSON.parse(r.stdout) as Record<string, unknown>;
+    const parsed = JSON.parse(r.stdout) as {
+      additionalContext?: unknown;
+      hookSpecificOutput?: { hookEventName?: string; additionalContext?: unknown };
+    };
     expect(typeof parsed.additionalContext).toBe("string");
-    expect(parsed.hookSpecificOutput).toBeUndefined();
+    expect(parsed.hookSpecificOutput?.hookEventName).toBe("SessionStart");
+    expect(parsed.hookSpecificOutput?.additionalContext).toBe(parsed.additionalContext);
   });
 
   test("4: pre-tool guard block converts to the permissionDecision deny JSON", () => {
@@ -292,8 +301,8 @@ describe("t249 Copilot hook adapter (live-captured payload fixtures)", () => {
       hook_event_name: "PreToolUse",
       session_id: "toolu_test0000000000000001",
       cwd: dir,
-      tool_name: "Read",
-      tool_input: { path: sibling },
+      toolName: "readFile",
+      toolInput: { filePath: sibling },
     });
     expect(r.code).toBe(0);
     const parsed = JSON.parse(r.stdout) as {
@@ -319,22 +328,106 @@ describe("t249 Copilot hook adapter (live-captured payload fixtures)", () => {
     expect(after.stdout.trim()).toBe("");
   });
 
-  test("14: IDE tool names normalize to the core contract (run_in_terminal guard deny)", () => {
+  test("14: documented VS Code tool names normalize to the core contract", () => {
     const dir = scratchProject(true);
-    // VS Code's shell tool name with a blocked lifecycle command: the alias
-    // table must canonicalize run_in_terminal -> Bash so the guard fires.
+    // VS Code's documented shell tool name with a blocked lifecycle command:
+    // the alias table must canonicalize runTerminalCommand -> Bash.
     const r = runAdapter(dir, "pre-tool", {
       hook_event_name: "PreToolUse",
       session_id: "11111111-2222-4333-8444-555555555555",
       cwd: dir,
-      tool_name: "run_in_terminal",
-      tool_input: { command: "bun .aidlc/tools/aidlc-state.ts approve" },
+      toolName: "runTerminalCommand",
+      toolInput: { command: "bun .aidlc/tools/aidlc-state.ts approve" },
     });
     expect(r.code).toBe(0);
     const parsed = JSON.parse(r.stdout) as {
       hookSpecificOutput?: { permissionDecision?: string };
     };
     expect(parsed.hookSpecificOutput?.permissionDecision).toBe("deny");
+  });
+
+  test("17: createFile/filePath and editFiles/files reach audit and sensors", () => {
+    const dir = scratchProject(true);
+    const first = join(seededRecordDir(dir), "construction", "U01", "code", "first.ts");
+    const second = join(seededRecordDir(dir), "construction", "U01", "code", "second.ts");
+    mkdirSync(dirname(first), { recursive: true });
+    writeFileSync(first, "export const first = true;\n", "utf-8");
+    writeFileSync(second, "export const second = true;\n", "utf-8");
+
+    const create = runAdapter(dir, "post-tool", {
+      hook_event_name: "PostToolUse",
+      cwd: dir,
+      toolName: "createFile",
+      toolInput: { filePath: first },
+    });
+    const edit = runAdapter(dir, "post-tool", {
+      hook_event_name: "PostToolUse",
+      cwd: dir,
+      toolName: "editFiles",
+      toolInput: { files: [{ filePath: first }, { filePath: second }] },
+    });
+
+    expect(create.code).toBe(0);
+    expect(edit.code).toBe(0);
+    const audit = readAudit(dir);
+    expect(audit).toContain("ARTIFACT_CREATED");
+    expect(audit).toContain("first.ts");
+    expect(audit).toContain("second.ts");
+  });
+
+  test("18: VS Code agent_type/agent_id populate and clear reviewer identity", () => {
+    const dir = scratchProject(true);
+    const record = seededRecordDir(dir);
+    mkdirSync(record, { recursive: true });
+    writeFileSync(
+      join(record, ".aidlc-reviewer-dispatch.json"),
+      JSON.stringify({
+        reviewer: "aidlc-architecture-reviewer-agent",
+        stage: "functional-design",
+        unit: "U01",
+        exempt: [],
+      }),
+      "utf-8",
+    );
+    const identity = {
+      agent_type: "aidlc-architecture-reviewer-agent",
+      agent_id: "vscode-agent-1",
+    };
+    runAdapter(dir, "subagent-start", {
+      hook_event_name: "SubagentStart",
+      cwd: dir,
+      ...identity,
+    });
+
+    const sibling = join(record, "construction", "U02", "functional-design", "design.md");
+    const blocked = runAdapter(dir, "pre-tool", {
+      hook_event_name: "PreToolUse",
+      session_id: "toolu_vscode000000000001",
+      cwd: dir,
+      toolName: "readFile",
+      toolInput: { filePath: sibling },
+    });
+    expect(
+      (JSON.parse(blocked.stdout) as {
+        hookSpecificOutput?: { permissionDecision?: string };
+      }).hookSpecificOutput?.permissionDecision,
+    ).toBe("deny");
+
+    runAdapter(dir, "log-subagent", {
+      hook_event_name: "SubagentStop",
+      cwd: dir,
+      ...identity,
+    });
+    expect(readAudit(dir)).toContain("aidlc-architecture-reviewer-agent");
+
+    const allowed = runAdapter(dir, "pre-tool", {
+      hook_event_name: "PreToolUse",
+      session_id: "toolu_vscode000000000002",
+      cwd: dir,
+      toolName: "readFile",
+      toolInput: { filePath: sibling },
+    });
+    expect(allowed.stdout.trim()).toBe("");
   });
 
   test("15: fresh-session source 'new' maps to startup (SESSION_STARTED lands)", () => {

@@ -92,10 +92,12 @@ git checkout v2
   (`.aidlc/hooks/aidlc-copilot-adapter.ts`, wired by
   `.github/hooks/aidlc.json`) converts a core-guard block into Copilot's
   `permissionDecision: deny` — the reviewer read-scope bound and the
-  state-transition guard actually refuse the tool call, and the Stop hook
-  blocks with the same `decision: block` contract as Claude Code.
+  state-transition guard actually refuse the tool call. SessionStart and Stop
+  responses carry both the CLI's top-level fields and VS Code's required
+  `hookSpecificOutput` envelope.
   Live-verified on the CLI; on VS Code agent mode the same deny/block
-  channels are documented and the adapter normalizes the IDE's tool names,
+  channels are documented and the adapter normalizes documented names such as
+  `runTerminalCommand`, `createFile`, `editFiles`, and `readFile`,
   but the IDE side has not yet been verified live — treat IDE enforcement
   as best-effort until it has.
 - **Hook wiring is matcher-free by design**: VS Code parses but IGNORES hook
@@ -103,9 +105,10 @@ git checkout v2
   matcher would silently broaden on the IDE.
 - **Reviewer identity is correlated, not delivered**: PreToolUse payloads
   carry no per-call agent field; the adapter brackets delegations via
-  SubagentStart/SubagentStop and forwards the identity when exactly one
-  subagent is active. Ambiguous overlap fails open for that call (the §12a
-  prose bound still governs).
+  SubagentStart/SubagentStop (including VS Code's `agent_type`/`agent_id`
+  fields) and forwards the identity when exactly one subagent is active.
+  Ambiguous overlap fails open for that call (the §12a prose bound still
+  governs).
 - **Personas carry no `model:` pin.** The two surfaces disagree on model
   value syntax (the CLI forwards frontmatter strings verbatim to the BYOK
   provider; an IDE display name 400s there). Agents inherit the session
@@ -114,6 +117,10 @@ git checkout v2
   Copilot's `agent` delegation tool to enforce no nested delegation. Copilot
   has no all-except-agent form, so delegated workers do not inherit arbitrary
   MCP tools.
+- **AIDLC plugins use Copilot-native surfaces.** Composed plugin personas and
+  generated stage/scope runners land in `.github/{agents,skills}`; plugin
+  selection regenerates those paths and never creates `.aidlc/skills` or
+  `.opencode/agents`.
 - **Session-end**: the CLI fires SessionEnd (piped through); VS Code local
   chat never fires it, so the adapter reconciles the prior session at the
   next SessionStart with inferred provenance (the codex pattern).
@@ -135,9 +142,10 @@ cd your-project
 copilot -p "/aidlc --doctor" -s --allow-all-tools   # or run /aidlc --doctor in VS Code chat
 ```
 
-The doctor checks the engine tree, the `.github` wiring files, the CLI
-version floor, folder trust, and reminds about the headless env var. The
-deterministic engine test for this harness is
-`tests/unit/t248-copilot-packaging.test.ts` + `t249-copilot-adapter.test.ts`;
+The doctor checks the engine tree and every adapter dependency, root
+`AGENTS.md`, the `.github` wiring files, the CLI version floor, folder trust,
+and reminds about the headless env var. The deterministic engine tests for
+this harness are `tests/unit/t248-copilot-packaging.test.ts`,
+`t249-copilot-adapter.test.ts`, and `t250-copilot-adapter-security.test.ts`;
 the live journey is `tests/e2e/t-exec-copilot-status.serial.test.ts`, gated
 on `AIDLC_COPILOT_EXEC_LIVE=1`.

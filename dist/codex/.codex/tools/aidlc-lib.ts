@@ -205,9 +205,10 @@ export function harnessDir(): string {
 // segment targets a directory that does not exist on a rename-rules harness.
 //
 // The rename is a fact only the harness MANIFEST knows, so the packager emits
-// it per-tree into tools/data/harness.json ({"rulesSubdir": "..."}) — the
-// open-set source of truth: a new harness ships its own harness.json and needs
-// no edit here. Resolution: AIDLC_RULES_SUBDIR env seam (fixtures) →
+// it per-tree into tools/data/harness.json (alongside the manifest name used
+// by runtime path resolution) — the open-set source of truth: a new harness
+// ships its own harness.json and needs no edit here. Resolution:
+// AIDLC_RULES_SUBDIR env seam (fixtures) →
 // AIDLC_HARNESS_DIR test-seam map (so "pretend to be .kiro" yields "steering"
 // without a .kiro tree on disk) → the shipped harness.json (the real-install
 // rung) → KNOWN_RULES_SUBDIR dev-fallback map → "rules". Returns the LAST path

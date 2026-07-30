@@ -68,8 +68,10 @@ Create `harness/<name>/manifest.ts` exporting a `HarnessManifest`
   The packager applies it to the copied dir AND to in-prose `<harnessDir>/rules/`
   references AND to the compiled stage-graph rule paths (it sets
   `AIDLC_RULES_DIR` at compile so `loadRules` finds the renamed dir) AND emits it
-  into a generated `tools/data/harness.json` that the runtime `rulesSubdir()`
-  seam reads — so a real install resolves the renamed dir with no hardcoded map.
+  into a generated `tools/data/harness.json` that records both the manifest
+  name and rules directory. Runtime path resolution uses the name to
+  disambiguate harnesses that share an engine directory, while `rulesSubdir()`
+  reads the rename — so a real install resolves both facts without hardcoding.
   This is the seam that makes `rulesRename` purely manifest data: set it here and
   every layer (build prose, compiled paths, runtime) follows, with no `core/` edit.
 - `skipRunnerGen` — set when the harness ships no `<harnessDir>/skills/` (Codex

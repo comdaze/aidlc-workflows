@@ -27,7 +27,16 @@
 
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join, relative, sep } from "node:path";
 import { REPO_ROOT } from "../harness/fixtures.ts";
 
@@ -138,5 +147,43 @@ describe("t248 dist/copilot packaging parity + shell shape", () => {
     expect(orchestrator).toContain("Copilot harness");
     expect(orchestrator).toContain("bun .aidlc/tools/aidlc-orchestrate.ts next");
     expect(orchestrator).not.toContain("{{HARNESS_DIR}}");
+    const harnessData = JSON.parse(
+      readFileSync(join(ENGINE, "tools", "data", "harness.json"), "utf-8"),
+    ) as { name?: string };
+    expect(harnessData.name).toBe("copilot");
+  });
+
+  test("6: doctor catches missing Copilot hook dependencies and root AGENTS.md", () => {
+    const project = mkdtempSync(join(tmpdir(), "t248-copilot-doctor-"));
+    try {
+      cpSync(COPILOT_ROOT, project, { recursive: true });
+      rmSync(join(project, ".aidlc", "hooks", "aidlc-state-transition-guard.ts"));
+      rmSync(join(project, "AGENTS.md"));
+      const result = spawnSync(
+        process.execPath,
+        [
+          join(project, ".aidlc", "tools", "aidlc-utility.ts"),
+          "doctor",
+          "--project-dir",
+          project,
+        ],
+        {
+          cwd: project,
+          encoding: "utf-8",
+          env: {
+            ...process.env,
+            AIDLC_HARNESS_DIR: ".aidlc",
+            AIDLC_HARNESS_NAME: "copilot",
+            COPILOT_HOME: join(project, ".copilot-home"),
+          },
+        },
+      );
+      const output = `${result.stdout}${result.stderr}`;
+      expect(result.status).not.toBe(0);
+      expect(output).toContain("✗  aidlc-state-transition-guard.ts present");
+      expect(output).toContain("✗  AGENTS.md present (onboarding + method imports)");
+    } finally {
+      rmSync(project, { recursive: true, force: true });
+    }
   });
 });

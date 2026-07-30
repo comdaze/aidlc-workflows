@@ -249,15 +249,23 @@ export function repointHarnessIncludes(projectDir: string, space?: string): stri
     ]) {
       const agentsDir = join(projectDir, relDir);
       if (!existsSync(agentsDir)) continue;
-      // .github/ is SHARED with user content on the Copilot harness — touch
-      // only the aidlc-named persona files there (the other dirs are
-      // AIDLC-owned, where the prefix filter is a no-op: every shipped
-      // persona is aidlc-*.md).
+      // .github/ is SHARED with user content on the Copilot harness, so touch
+      // only aidlc-named core personas or plugin-owned personas there. The
+      // AIDLC-owned engine/native dirs may contain plugin agents whose names
+      // intentionally lack the aidlc prefix.
+      const sharedGithubDir = relDir === join(".github", "agents");
       for (const name of readdirSync(agentsDir).sort()) {
-        if (!name.endsWith(".md") || !name.startsWith("aidlc-")) continue;
+        if (!name.endsWith(".md")) continue;
         const p = join(agentsDir, name);
         const raw = readSafe(p);
         if (raw === null) continue;
+        if (
+          sharedGithubDir &&
+          !name.startsWith("aidlc-") &&
+          !/^plugin:\s*[a-z][a-z0-9-]*\s*$/m.test(raw)
+        ) {
+          continue;
+        }
         repointFile(
           p,
           join(relDir, name),

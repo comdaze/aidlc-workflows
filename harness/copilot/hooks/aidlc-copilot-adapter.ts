@@ -7,8 +7,9 @@
 //
 // ONE dist serves BOTH Copilot surfaces (CLI 1.0.74+ and VS Code agent mode
 // 1.130+): the shipped .github/hooks/aidlc.json registers PascalCase event
-// names, which makes BOTH surfaces deliver Claude-shaped snake_case payloads
-// (live-verified on the CLI; the IDE always sends snake_case). The
+// names. The CLI delivers mostly Claude-shaped snake_case payloads; VS Code
+// uses its documented camelCase tool names/inputs plus snake_case agent ids.
+// The adapter accepts both dialects. The
 // load-bearing differences from Claude Code, all live-captured
 // (tmp/copilot-compat-spike/ in the framework repo):
 //   1. File-tool input keys differ: Copilot sends `path` + `file_text` /
@@ -30,9 +31,9 @@
 //      "permissionDecision": "deny", "permissionDecisionReason": ...}} — the
 //      one deny dialect BOTH surfaces honor (live-verified on the CLI:
 //      the call is refused and the reason is relayed to the model).
-//   5. Stop's block contract is identical to Claude Code:
-//      {"decision":"block","reason"} on stdout passes through VERBATIM
-//      (stop_hook_active included; live-verified).
+//   5. CLI SessionStart/Stop consume Claude-shaped top-level fields, while VS
+//      Code requires the same fields inside hookSpecificOutput. The shim emits
+//      both representations so one registration remains valid on both.
 //   6. SessionEnd EXISTS on the CLI (reason: complete|error|abort|...) and is
 //      piped through; local VS Code chat parses but never fires it — the
 //      session-start reconcile (codex D-4 pattern) covers that surface via
@@ -51,7 +52,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { appendAuditEntry } from "../tools/aidlc-audit.ts";
 import { stateFilePath } from "../tools/aidlc-lib.ts";
@@ -66,10 +67,16 @@ interface CopilotHookInput {
   source?: string;
   reason?: string;
   tool_name?: string;
+  toolName?: string;
   tool_input?: Record<string, unknown>;
+  toolInput?: Record<string, unknown>;
   tool_result?: unknown;
+  toolResult?: unknown;
   agent_name?: string;
   agentName?: string;
+  agent_type?: string;
+  agent_id?: string;
+  agentId?: string;
   agent_display_name?: string;
   stop_reason?: string;
   stop_hook_active?: boolean;
@@ -103,7 +110,10 @@ export async function run(
   // both surfaces EXCEPT SubagentStart, which the CLI delivers camelCase
   // (live-verified quirk #3 above).
   const sessionId = copilot.session_id ?? copilot.sessionId ?? "";
-  const subagentName = copilot.agent_name ?? copilot.agentName ?? "";
+  const subagentName =
+    copilot.agent_type ?? copilot.agent_name ?? copilot.agentName ?? "";
+  const subagentId = copilot.agent_id ?? copilot.agentId ?? sessionId;
+  const nativeToolInput = copilot.tool_input ?? copilot.toolInput;
 
   // Canonicalize the tool name across the two surfaces. The CLI sends
   // Claude-style names (Bash/Write/Edit/Read — live-captured); VS Code agent
@@ -114,41 +124,59 @@ export async function run(
   const TOOL_ALIAS: Record<string, string> = {
     // shell
     run_in_terminal: "Bash",
+    runTerminalCommand: "Bash",
     bash: "Bash",
     local_shell: "Bash",
     // writes/creates
     create_file: "Write",
+    createFile: "Write",
     create_directory: "Write",
+    createDirectory: "Write",
     // edits
     apply_patch: "Edit",
+    applyPatch: "Edit",
+    editFiles: "Edit",
     insert_edit_into_file: "Edit",
+    insertEditIntoFile: "Edit",
     replace_string_in_file: "Edit",
+    replaceStringInFile: "Edit",
     multi_replace_string_in_file: "Edit",
+    multiReplaceStringInFile: "Edit",
     edit_notebook_file: "Edit",
+    editNotebookFile: "Edit",
     str_replace: "Edit",
+    strReplace: "Edit",
     str_replace_editor: "Edit",
     // reads
     read_file: "Read",
+    readFile: "Read",
     view: "Read",
     // read-scope sweep surfaces (VS Code names → core matcher arms)
     list_dir: "LS",
+    listDir: "LS",
+    listDirectory: "LS",
     file_search: "Glob",
+    fileSearch: "Glob",
     glob: "Glob",
     grep_search: "Grep",
+    grepSearch: "Grep",
     semantic_search: "Grep",
+    semanticSearch: "Grep",
   };
   const toolName = (() => {
-    const raw = copilot.tool_name ?? "";
+    const raw = copilot.tool_name ?? copilot.toolName ?? "";
     return TOOL_ALIAS[raw] ?? raw;
   })();
 
   // Re-serialize the payload with the canonical tool_name so verbatim pipes
   // (Bash → guards, runtime-compile) carry the name the core hooks match on.
   const canonicalInput = (() => {
-    if (!copilot.tool_name || copilot.tool_name === toolName) return input;
+    const rawToolName = copilot.tool_name ?? copilot.toolName;
+    if (!rawToolName) return input;
     try {
       const parsed = JSON.parse(input) as Record<string, unknown>;
       parsed.tool_name = toolName;
+      if (nativeToolInput) parsed.tool_input = nativeToolInput;
       return JSON.stringify(parsed);
     } catch {
       return input;
@@ -219,13 +247,56 @@ export async function run(
     })}\n`;
   }
 
-  // Re-key Copilot file-tool input (`path`, `file_text`/`old_str`/`new_str`)
-  // to the core hooks' `file_path` contract (difference #1). Absent/foreign
-  // shapes pass through unchanged.
-  function filePathOf(toolInput: Record<string, unknown> | undefined): string | null {
-    const p = toolInput?.path ?? toolInput?.file_path;
-    if (typeof p !== "string" || p.length === 0) return null;
-    return isAbsolute(p) ? p : join(projectDir, p);
+  // Re-key Copilot file-tool inputs (`path`/`file_path`/`filePath`, plus VS
+  // Code's `files` lists) to the core hooks' `file_path` contract.
+  //
+  // The adapter is the trust boundary between the host and core hooks. Paths
+  // outside the project are treated as absent: the tool call still fails open,
+  // but no absolute host path crosses into audit, sensor, or guard hooks.
+  const PROJECT_ROOT = resolve(projectDir);
+  function confinedPath(raw: string): string | null {
+    const candidate = isAbsolute(raw) ? resolve(raw) : resolve(PROJECT_ROOT, raw);
+    const rel = relative(PROJECT_ROOT, candidate);
+    if (rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return null;
+    return candidate;
+  }
+
+  function filePathsOf(toolInput: Record<string, unknown> | undefined): string[] {
+    if (!toolInput) return [];
+    const rawPaths: string[] = [];
+    const add = (value: unknown): void => {
+      if (typeof value === "string" && value.length > 0) {
+        rawPaths.push(value);
+        return;
+      }
+      if (!value || typeof value !== "object" || Array.isArray(value)) return;
+      const item = value as Record<string, unknown>;
+      add(item.path);
+      add(item.file_path);
+      add(item.filePath);
+    };
+    add(toolInput.path);
+    add(toolInput.file_path);
+    add(toolInput.filePath);
+    for (const key of ["files", "filePaths"] as const) {
+      const values = toolInput[key];
+      if (Array.isArray(values)) {
+        for (const value of values) add(value);
+      }
+    }
+    return [...new Set(rawPaths.map(confinedPath).filter((p): p is string => p !== null))];
+  }
+
+  function withoutPathFields(toolInput: Record<string, unknown>): Record<string, unknown> {
+    const {
+      path: _path,
+      file_path: _filePath,
+      filePath: _camelFilePath,
+      files: _files,
+      filePaths: _filePaths,
+      ...rest
+    } = toolInput;
+    return rest;
   }
 
   // --- Active-subagent ledger (difference #2) ---------------------------------
@@ -239,10 +310,11 @@ export async function run(
     `aidlc-copilot-subagents-${createHash("sha256").update(projectDir).digest("hex").slice(0, 16)}.json`,
   );
 
-  function readLedger(): Array<{ name: string; ts: number }> {
+  function readLedger(): Array<{ name: string; id?: string; ts: number }> {
     try {
       const entries = JSON.parse(readFileSync(LEDGER, "utf-8")) as Array<{
         name: string;
+        id?: string;
         ts: number;
       }>;
       const cutoff = Date.now() - 30 * 60 * 1000;
@@ -252,7 +324,7 @@ export async function run(
     }
   }
 
-  function writeLedger(entries: Array<{ name: string; ts: number }>): void {
+  function writeLedger(entries: Array<{ name: string; id?: string; ts: number }>): void {
     try {
       mkdirSync(dirname(LEDGER), { recursive: true });
       writeFileSync(LEDGER, JSON.stringify(entries), "utf-8");
@@ -262,6 +334,7 @@ export async function run(
   }
 
   function activeSubagentType(): string | null {
+    if (copilot.agent_type) return copilot.agent_type;
     if (!sessionId.startsWith("toolu_")) return null; // main-session call
     const entries = readLedger();
     return entries.length === 1 ? entries[0].name : null;
@@ -284,10 +357,25 @@ export async function run(
         ...(sessionId ? { session_id: sessionId } : {}),
       });
       const r = runCore("aidlc-session-start.ts", fwd);
-      // The core hook prints {"additionalContext": "..."} — Copilot consumes
-      // exactly that shape from SessionStart (live-verified: injected facts
-      // reached the model). No re-wrap needed.
-      if (r.stdout) process.stdout.write(r.stdout);
+      if (r.stdout) {
+        try {
+          const parsed = JSON.parse(r.stdout) as Record<string, unknown>;
+          const additionalContext = parsed.additionalContext;
+          process.stdout.write(`${JSON.stringify({
+            ...parsed,
+            ...(typeof additionalContext === "string"
+              ? {
+                  hookSpecificOutput: {
+                    hookEventName: "SessionStart",
+                    additionalContext,
+                  },
+                }
+              : {}),
+          })}\n`);
+        } catch {
+          process.stdout.write(r.stdout);
+        }
+      }
       return 0;
     }
 
@@ -339,23 +427,26 @@ export async function run(
       // The full read/edit sweep surface the core matcher enforces on Claude
       // (Read|Edit|Write plus LS/Glob/Grep — the sibling-sweep evasions).
       if (["Write", "Edit", "Read", "LS", "Glob", "Grep"].includes(toolName)) {
-        const ti = copilot.tool_input ?? {};
-        const filePath = filePathOf(copilot.tool_input);
+        const ti = nativeToolInput ?? {};
+        const filePaths = filePathsOf(nativeToolInput);
         // Path-shaped tools re-key `path` → `file_path`; the search tools
         // (LS/Glob/Grep) keep their native fields, which the core matcher
         // reads directly (path/pattern/glob).
-        const toolInput: Record<string, unknown> =
+        const toolInputs: Array<Record<string, unknown>> =
           toolName === "LS" || toolName === "Glob" || toolName === "Grep"
-            ? { ...ti, ...(filePath ? { path: filePath } : {}) }
-            : filePath
-              ? { file_path: filePath }
-              : {};
-        if (Object.keys(toolInput).length > 0) {
+            ? [{
+                ...withoutPathFields(ti),
+                ...(filePaths[0] ? { path: filePaths[0] } : {}),
+              }]
+            : filePaths.map((filePath) => ({ file_path: filePath }));
+        for (const toolInput of toolInputs) {
+          if (Object.keys(toolInput).length === 0) continue;
+          const agentType = activeSubagentType();
           const fwd = JSON.stringify({
             hook_event_name: "PreToolUse",
             tool_name: toolName,
             tool_input: toolInput,
-            ...(activeSubagentType() ? { agent_type: activeSubagentType() } : {}),
+            ...(agentType ? { agent_type: agentType } : {}),
           });
           const r = runCoreWithStderr("aidlc-reviewer-scope.ts", fwd);
           if (r.code === 2) {
@@ -371,8 +462,7 @@ export async function run(
       // Matcher-free registration: self-filter on tool_name (the IDE ignores
       // matchers — difference in the wiring header). Advisory targets only.
       if (toolName === "Write" || toolName === "Edit") {
-        const filePath = filePathOf(copilot.tool_input);
-        if (filePath) {
+        for (const filePath of filePathsOf(nativeToolInput)) {
           const fwd = JSON.stringify({
             hook_event_name: "PostToolUse",
             tool_name: toolName,
@@ -400,7 +490,7 @@ export async function run(
     case "subagent-start": {
       if (subagentName) {
         const entries = readLedger();
-        entries.push({ name: subagentName, ts: Date.now() });
+        entries.push({ name: subagentName, ...(subagentId ? { id: subagentId } : {}), ts: Date.now() });
         writeLedger(entries);
       }
       return 0;
@@ -411,7 +501,10 @@ export async function run(
       // agent_type/agent_id. Pop the ledger entry, then forward.
       if (subagentName) {
         const entries = readLedger();
-        const idx = entries.map((e) => e.name).lastIndexOf(subagentName);
+        let idx = subagentId
+          ? entries.map((e) => e.id).lastIndexOf(subagentId)
+          : -1;
+        if (idx < 0) idx = entries.map((e) => e.name).lastIndexOf(subagentName);
         if (idx >= 0) entries.splice(idx, 1);
         writeLedger(entries);
       }
@@ -420,17 +513,37 @@ export async function run(
         JSON.stringify({
           hook_event_name: "SubagentStop",
           agent_type: subagentName || "unknown",
-          agent_id: sessionId,
+          agent_id: subagentId,
         }),
       );
       return 0;
     }
 
     case "stop": {
-      // Contract identical to Claude Code (difference #5): pass stdin
-      // verbatim, forward {"decision":"block","reason"} stdout unchanged.
+      // Emit both host dialects: CLI reads the top-level Claude fields; VS Code
+      // reads the same decision under hookSpecificOutput.
       const r = runCore("aidlc-stop.ts", input);
-      if (r.stdout) process.stdout.write(r.stdout);
+      if (r.stdout) {
+        try {
+          const parsed = JSON.parse(r.stdout) as Record<string, unknown>;
+          const decision = parsed.decision;
+          const reason = parsed.reason;
+          process.stdout.write(`${JSON.stringify({
+            ...parsed,
+            ...(typeof decision === "string"
+              ? {
+                  hookSpecificOutput: {
+                    hookEventName: "Stop",
+                    decision,
+                    ...(typeof reason === "string" ? { reason } : {}),
+                  },
+                }
+              : {}),
+          })}\n`);
+        } catch {
+          process.stdout.write(r.stdout);
+        }
+      }
       return r.code;
     }
 

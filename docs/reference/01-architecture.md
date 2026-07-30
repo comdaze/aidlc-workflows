@@ -278,9 +278,10 @@ dist/<harness>/        # GENERATED + committed: claude/.claude, kiro/.kiro,
 `core/` `.ts` is byte-copied untransformed; the runtime `harnessDir()` seam
 (`core/tools/aidlc-lib.ts`) derives the harness dir from the shipped layout at
 execution time — open-set, from the tool's own path rather than a hardcoded
-list, so a new harness needs no edit here — and its rules-dir rename ships
-per-tree in a generated `tools/data/harness.json` the `rulesSubdir()` seam
-reads. One set of tool sources runs in every harness. See
+list, so a new harness needs no edit here. Its manifest name and rules-dir
+rename ship per-tree in generated `tools/data/harness.json`; runtime path
+resolution uses the name to distinguish shared engine directories and
+`rulesSubdir()` reads the rename. One set of tool sources runs in every harness. See
 [Porting to a New Harness](../harness-engineering/09-porting-to-a-new-harness.md).
 
 ## Directory Structure

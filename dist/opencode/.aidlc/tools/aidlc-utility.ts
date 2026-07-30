@@ -118,6 +118,7 @@ import {
   compiledExecutable,
   resolveHarnessPath,
   resolveSkillsPath,
+  runtimeHarnessName,
 } from "./aidlc-runtime-paths.ts";
 
 // ---------------------------------------------------------------------------
@@ -433,6 +434,7 @@ function runBunTool(projectDir: string, rel: string, args: string[], label: stri
     env: {
       ...process.env,
       AIDLC_HARNESS_DIR: harnessDir(),
+      AIDLC_HARNESS_NAME: runtimeHarnessName(projectDir, harnessDir()),
       AIDLC_PROJECT_DIR: projectDir,
     },
   });
@@ -848,6 +850,7 @@ async function handlePluginSync(projectDir: string): Promise<void> {
     const composeEnv: NodeJS.ProcessEnv = {
       ...process.env,
       AIDLC_HARNESS_DIR: harnessDir(),
+      AIDLC_HARNESS_NAME: runtimeHarnessName(projectDir, harnessDir()),
       AIDLC_PROJECT_DIR: projectDir,
       AIDLC_PLUGIN_ROOT: item.root,
       CLAUDE_PLUGIN_ROOT: item.root,
@@ -856,6 +859,7 @@ async function handlePluginSync(projectDir: string): Promise<void> {
     if (import.meta.url.includes("/$bunfs/")) {
       const envKeys = [
         "AIDLC_HARNESS_DIR",
+        "AIDLC_HARNESS_NAME",
         "AIDLC_PROJECT_DIR",
         "AIDLC_PLUGIN_ROOT",
         "CLAUDE_PLUGIN_ROOT",
@@ -1138,6 +1142,8 @@ function handleDoctor(projectDir: string, flags: Record<string, string> = {}): v
   // Kiro and Codex trees additionally carry an authored stdin adapter that wires
   // them up.
   const harness = harnessDir();
+  const harnessName = runtimeHarnessName(projectDir, harness);
+  const isCopilot = harnessName === "copilot";
   if (harness === ".claude") {
     // Claude Code: the EXPECTED roster is the set of aidlc-*.ts hooks that
     // settings.json actually wires (its `hooks` event blocks + the `statusLine`
@@ -1215,6 +1221,15 @@ function handleDoctor(projectDir: string, flags: Record<string, string> = {}): v
     ];
     if (harness === ".kiro") tsHooks.push("aidlc-kiro-adapter");
     if (harness === ".codex") tsHooks.push("aidlc-codex-adapter");
+    if (isCopilot) {
+      tsHooks.push(
+        "aidlc-state-transition-guard",
+        "aidlc-reviewer-scope",
+        "aidlc-stop",
+        "aidlc-sensor-fire",
+        "aidlc-runtime-compile",
+      );
+    }
     for (const h of tsHooks) {
       const hookPath = join(projectDir, harness, "hooks", `${h}.ts`);
       results.push({
@@ -1228,7 +1243,7 @@ function handleDoctor(projectDir: string, flags: Record<string, string> = {}): v
       // flavor. Copilot: a hooks/ shim inside the engine dir (wired by
       // .github/hooks/aidlc.json). opencode: a plugin in the .opencode shell.
       const copilotAdapter = join(projectDir, harness, "hooks", "aidlc-copilot-adapter.ts");
-      if (existsSync(copilotAdapter) || existsSync(join(projectDir, ".github", "hooks", "aidlc.json"))) {
+      if (isCopilot) {
         results.push({
           pass: existsSync(copilotAdapter),
           label: "hooks/aidlc-copilot-adapter.ts present (hook shim)",
@@ -1309,17 +1324,14 @@ function handleDoctor(projectDir: string, flags: Record<string, string> = {}): v
       label:
         "hook trust: ensure [hooks.state] entries are pre-seeded in $CODEX_HOME/config.toml (`bun scripts/package.ts codex trust --project <dir>`) or run one TUI trust pass",
     });
-  } else if (
-    harness === ".aidlc" &&
-    (existsSync(join(projectDir, ".github", "hooks", "aidlc.json")) ||
-      existsSync(join(projectDir, harness, "hooks", "aidlc-copilot-adapter.ts")))
-  ) {
+  } else if (harness === ".aidlc" && isCopilot) {
     // Copilot (CLI + VS Code, one install): the wiring config is
     // .github/hooks/aidlc.json; skills and personas ride .github/{skills,agents}.
     for (const [file, what, from] of [
       [".github/hooks/aidlc.json", "hook wiring", "dist/copilot/.github/hooks/aidlc.json"],
       [".github/skills/aidlc/SKILL.md", "/aidlc entry point", "dist/copilot/.github/skills/aidlc/SKILL.md"],
       [".github/agents/aidlc-developer-agent.md", "persona custom agents", "dist/copilot/.github/agents/"],
+      ["AGENTS.md", "onboarding + method imports", "dist/copilot/AGENTS.md"],
     ] as const) {
       results.push({
         pass: existsSync(join(projectDir, file)),
