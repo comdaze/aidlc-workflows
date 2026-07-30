@@ -1,7 +1,7 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
-## [2.5.15] - 2026-07-29
+## [2.5.29] - 2026-07-30
 
 AI-DLC now ships a sixth harness: **Cursor** (`dist/cursor/`), serving the Cursor IDE and the Cursor CLI (`agent`) from one tree. Install it with `bun dist/cursor/install.ts <project>` and run `/aidlc` (IDE chat) or `agent -p "/aidlc ..."` (headless CLI). Live-verified against cursor-agent 2026.07 on Linux; setup and caveats in `docs/guide/harnesses/cursor.md`. **Upgrade:** rerun the installer after refreshing `dist/cursor/`; it preserves project-owned config and refuses unresolved file collisions. Rebuild and reinstall any AIDLC Cursor plugins.
 
