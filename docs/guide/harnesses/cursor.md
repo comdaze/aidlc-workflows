@@ -15,12 +15,13 @@ Cursor is the most "native" port so far - it consumes the standard core
 projection directly (no `emit.ts`, no split dot-dir). The distribution is:
 
 - **`.cursor/`** - the framework tree. Cursor reads only a few subdirs as
-  native meaning: `rules/` (the method rule), `agents/` (the 14 personas as
-  native subagents), `skills/` (the orchestrator and generated stage runners),
-  `hooks.json` + `hooks/` (the hook wiring and adapter), `cli.json`
-  (permissions), and `mcp.json` (MCP servers, if you add one). The engine dirs
-  beside them (`tools/`, `aidlc-common/`, `knowledge/`, `sensors/`, `scopes/`)
-  are inert data to Cursor and safely share the directory.
+  native meaning: `rules/` (one standing and four phase method pointers),
+  `agents/` (the 14 personas as native subagents), `skills/` (the orchestrator,
+  utility shortcuts, and generated stage runners), `hooks.json` + `hooks/`
+  (the hook wiring and adapter), `cli.json` (permissions), and `mcp.json` (MCP
+  servers, if you add one). The engine dirs beside them (`tools/`,
+  `aidlc-common/`, `knowledge/`, `sensors/`, `scopes/`) are inert data to
+  Cursor and safely share the directory.
 - **`aidlc/`** - the workspace shell (the pre-built
   `aidlc/spaces/default/memory/` method tree the engine reads), a sibling of
   `.cursor/`.
@@ -57,13 +58,15 @@ projection directly (no `emit.ts`, no split dot-dir). The distribution is:
    sections to existing `AGENTS.md` and `.gitignore` files instead of replacing
    them. It records framework ownership in `.cursor/aidlc-install.json`;
    re-running it upgrades managed files while preserving `aidlc/active-space`
-   and reapplying that space to the mutable rule and persona pointers.
+   and reapplying that space to all mutable rule and persona pointers.
    The `aidlc/` shell ships the pre-built `aidlc/spaces/default/memory/` method
    tree the engine reads; `/aidlc --doctor` fails its "workspace shell ready"
    check without it.
 
 2. Open the project in the Cursor IDE (or start `agent` in it) and run
    `/aidlc --doctor`, then `/aidlc` followed by what you want to build.
+   Native utility shortcuts are `/aidlc-status`, `/aidlc-jump --stage <slug>`
+   (or `--phase <name>`), and `/aidlc-scope <name>`.
 
 ## What's different on this harness
 
@@ -111,15 +114,24 @@ projection directly (no `emit.ts`, no split dot-dir). The distribution is:
   `disable-model-invocation: true` on generated runner skills, including plugin
   runners, so ordinary coding prompts cannot auto-activate state-mutating
   workflow shortcuts.
-- **The method rule is a read instruction, not an import.** Cursor rules do not
-  expand `@`-import lines, so `.cursor/rules/aidlc.mdc` (`alwaysApply`) tells the
-  agent to read `aidlc/spaces/<space>/memory/*.md`, and the `sessionStart` hook
-  injects the live workflow context. `/aidlc space <name>` re-points the rule's
-  file list in place.
+- **Utility shortcuts are native skills.** `/aidlc-status`, `/aidlc-jump`, and
+  `/aidlc-scope` improve slash-menu discovery without creating a second engine
+  path. They all carry `disable-model-invocation: true`; Cursor invokes them
+  only when the user chooses them. The legacy `.cursor/commands/` surface is
+  not shipped.
+- **Method rules are read instructions, not imports.** Cursor rules do not
+  expand `@`-import lines. `.cursor/rules/aidlc.mdc` is always applied and
+  points to the active space's org/team/project files; four
+  `.cursor/rules/aidlc-phase-*.mdc` rules are agent-decided and point to the
+  matching phase file only when relevant (live-verified on cursor-agent: a
+  phase-framed prompt loads exactly the matching phase rule, an unrelated
+  prompt loads none). The `sessionStart` hook separately
+  injects live workflow context. `/aidlc space <name>` re-points all five rule
+  files in place.
 - **Construction swarm runs as task-tool fan-out only** (`AIDLC_USE_SWARM=1` is
   a loud no-op - no Workflow tool exists).
-- **No statusline / welcome message** - use `/aidlc --status` and the progress
-  lines at gates.
+- **No statusline / welcome message** - use `/aidlc-status` (or
+  `/aidlc --status`) and the progress lines at gates.
 - **Tab autocomplete is untouched** by this install - it rides Cursor's own
   models regardless of configuration.
 - **Permissions**: `.cursor/cli.json` pre-approves `Shell(bun)` only (a
@@ -146,8 +158,8 @@ agent -p "/aidlc --status" --output-format text --trust   # /aidlc --status thro
 ```
 
 The doctor's Cursor-specific checks: the hook wiring at `.cursor/hooks.json`,
-the `Shell(bun)` permission pre-approval at `.cursor/cli.json`, and the method
-rule at `.cursor/rules/aidlc.mdc`.
+the `Shell(bun)` permission pre-approval at `.cursor/cli.json`, the standing
+rule at `.cursor/rules/aidlc.mdc`, and all four phase-rule pointers.
 
 > **Scripting trap: Cursor CLI always exits 0.** Headless `agent -p "<prompt>"
 > --output-format text --trust` returns exit code 0 even when the run errors, so

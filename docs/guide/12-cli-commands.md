@@ -11,6 +11,12 @@ All AI-DLC commands start with the orchestrator invocation. This chapter is a co
 > [Cursor](harnesses/cursor.md), and [opencode](harnesses/opencode.md) harness
 > guides.
 
+> **Cursor shortcuts.** Cursor also exposes `/aidlc-status`,
+> `/aidlc-jump --stage <slug|#>` (or `--phase <name|#>`), and
+> `/aidlc-scope <name>` as native skills. They package the matching `/aidlc`
+> forms below and use the same engine; they are aliases, not alternate state
+> paths.
+
 ---
 
 ## Quick Reference

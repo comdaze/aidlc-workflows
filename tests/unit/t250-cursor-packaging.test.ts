@@ -12,9 +12,9 @@
 //       - all but the authored adapter, which has no Claude twin.
 //   (3) The Cursor-native surfaces are shaped for Cursor's scanners: the
 //       rules dir carries ONLY .mdc (a plain .md in .cursor/rules/ is
-//       silently ignored by Cursor - live-verified), the method rule is
-//       alwaysApply, and hooks.json wires only camelCase events through the
-//       adapter.
+//       silently ignored by Cursor - live-verified), standing method layers
+//       are always-applied, phase layers are agent-decided, and hooks.json
+//       wires only camelCase events through the adapter.
 //   (4) The persona files double as live native subagents on Cursor, so no
 //       agent may carry a model pin (model availability is plan-dependent;
 //       a pinned id hard-fails Free/lower plans) and the raw tier: key never
@@ -85,21 +85,40 @@ describe("t250 dist/cursor packaging parity + shell shape", () => {
     expect(divergent).toEqual([]);
   });
 
-  test("3: rules/ holds only .mdc, and the method rule is alwaysApply naming the shipped memory tree", () => {
+  test("3: rules/ splits always-applied standing layers from agent-decided phase layers", () => {
     // Cursor loads ONLY .mdc from .cursor/rules/ (live-verified: a plain .md
     // there is silently ignored). Anything else in the dir is a shipping bug.
-    const rules = readdirSync(join(ENGINE, "rules"));
-    expect(rules).toEqual(["aidlc.mdc"]);
-    const rule = readFileSync(join(ENGINE, "rules", "aidlc.mdc"), "utf-8");
-    expect(rule).toMatch(/^alwaysApply: true$/m);
-    // The read-instruction list must name the shipped default space's method
-    // files (the /aidlc space re-point rewrites these lines in place).
-    for (const f of ["org.md", "team.md", "project.md", "phases/construction.md"]) {
-      expect(rule).toContain(`aidlc/spaces/default/memory/${f}`);
+    const rules = readdirSync(join(ENGINE, "rules")).sort();
+    expect(rules).toEqual([
+      "aidlc-phase-construction.mdc",
+      "aidlc-phase-ideation.mdc",
+      "aidlc-phase-inception.mdc",
+      "aidlc-phase-operation.mdc",
+      "aidlc.mdc",
+    ]);
+    const standing = readFileSync(join(ENGINE, "rules", "aidlc.mdc"), "utf-8");
+    expect(standing).toMatch(/^alwaysApply: true$/m);
+    for (const f of ["org.md", "team.md", "project.md"]) {
+      expect(standing).toContain(`aidlc/spaces/default/memory/${f}`);
     }
-    // No @-import lines: Cursor rules do not expand them (live-verified), so
-    // an @-line here would be a silent no-op masquerading as an include.
-    expect(rule).not.toMatch(/^@/m);
+    expect(standing).not.toContain("memory/phases/");
+
+    for (const phase of ["ideation", "inception", "construction", "operation"]) {
+      const rule = readFileSync(
+        join(ENGINE, "rules", `aidlc-phase-${phase}.mdc`),
+        "utf-8",
+      );
+      expect(rule, phase).toMatch(/^description: .+ phase practices$/mi);
+      expect(rule, phase).toMatch(/^alwaysApply: false$/m);
+      expect(rule, phase).toContain(
+        `aidlc/spaces/default/memory/phases/${phase}.md`,
+      );
+      expect(rule, phase).not.toContain("memory/org.md");
+    }
+    for (const name of rules) {
+      // No @-import lines: Cursor rules do not expand them (live-verified).
+      expect(readFileSync(join(ENGINE, "rules", name), "utf-8")).not.toMatch(/^@/m);
+    }
     // And the shipped memory tree the rule points at actually ships.
     expect(existsSync(join(CURSOR_ROOT, "aidlc", "spaces", "default", "memory", "org.md"))).toBe(
       true,
@@ -203,8 +222,13 @@ describe("t250 dist/cursor packaging parity + shell shape", () => {
       expect(r.stdout).toContain("✓  hooks.json present (hook wiring)");
       expect(r.stdout).toContain("✓  cli.json present (Shell(bun) permission pre-approval)");
       expect(r.stdout).toContain(
-        "✓  rules/aidlc.mdc present (method rule (alwaysApply read instruction))",
+        "✓  rules/aidlc.mdc present (standing method rule (alwaysApply read instruction))",
       );
+      for (const phase of ["Ideation", "Inception", "Construction", "Operation"]) {
+        expect(r.stdout).toContain(
+          `✓  rules/aidlc-phase-${phase.toLowerCase()}.mdc present (${phase} phase rule (agent-decided read instruction))`,
+        );
+      }
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -392,6 +416,16 @@ describe("t250 dist/cursor packaging parity + shell shape", () => {
       expect(
         readFileSync(join(project, ".cursor", "rules", "aidlc.mdc"), "utf-8"),
       ).toContain("aidlc/spaces/team-b/memory/");
+      for (const phase of ["ideation", "inception", "construction", "operation"]) {
+        const installedRule = readFileSync(
+          join(project, ".cursor", "rules", `aidlc-phase-${phase}.mdc`),
+          "utf-8",
+        );
+        expect(installedRule, phase).toContain(
+          `aidlc/spaces/team-b/memory/phases/${phase}.md`,
+        );
+        expect(installedRule, phase).not.toContain("aidlc/spaces/default/memory/");
+      }
       for (const agent of readdirSync(join(project, ".cursor", "agents"))) {
         if (!agent.endsWith("-agent.md")) continue;
         const shipped = readFileSync(join(ENGINE, "agents", agent), "utf-8");
@@ -421,5 +455,28 @@ describe("t250 dist/cursor packaging parity + shell shape", () => {
       expect(fm, file).toMatch(/^disable-model-invocation:\s*true$/m);
     }
     expect(generated.length).toBeGreaterThan(0);
+  });
+
+  test("15: Cursor utility shortcuts are native explicit-only skills", () => {
+    const shortcuts = {
+      "aidlc-status": "next --status",
+      "aidlc-jump": "next $ARGUMENTS",
+      "aidlc-scope": "next --scope $ARGUMENTS",
+    } as const;
+    for (const [name, invocation] of Object.entries(shortcuts)) {
+      const raw = readFileSync(join(ENGINE, "skills", name, "SKILL.md"), "utf-8");
+      const fm = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1] ?? "";
+      expect(fm, name).toMatch(new RegExp(`^name: ${name}$`, "m"));
+      expect(fm, name).toMatch(/^user-invocable: true$/m);
+      expect(fm, name).toMatch(/^disable-model-invocation: true$/m);
+      expect(raw, name).toContain(invocation);
+    }
+    expect(
+      readFileSync(join(ENGINE, "skills", "aidlc-jump", "SKILL.md"), "utf-8"),
+    ).toMatch(/A\s+missing target must never degrade into a bare `next`\./);
+    expect(
+      readFileSync(join(ENGINE, "skills", "aidlc-scope", "SKILL.md"), "utf-8"),
+    ).toMatch(/A\s+missing scope must never degrade into a bare `next`\./);
+    expect(existsSync(join(ENGINE, "commands"))).toBe(false);
   });
 });

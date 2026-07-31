@@ -1302,11 +1302,15 @@ function handleDoctor(projectDir: string, flags: Record<string, string> = {}): v
     });
   } else if (harness === ".cursor") {
     // Cursor: hooks.json (the hook wiring), cli.json (permissions), and the
-    // method rule are all inside .cursor/.
+    // standing + phase method rule pointers are all inside .cursor/.
     for (const [file, what, from] of [
       ["hooks.json", "hook wiring", "dist/cursor/.cursor/hooks.json"],
       ["cli.json", "Shell(bun) permission pre-approval", "dist/cursor/.cursor/cli.json"],
-      ["rules/aidlc.mdc", "method rule (alwaysApply read instruction)", "dist/cursor/.cursor/rules/aidlc.mdc"],
+      ["rules/aidlc.mdc", "standing method rule (alwaysApply read instruction)", "dist/cursor/.cursor/rules/aidlc.mdc"],
+      ["rules/aidlc-phase-ideation.mdc", "Ideation phase rule (agent-decided read instruction)", "dist/cursor/.cursor/rules/aidlc-phase-ideation.mdc"],
+      ["rules/aidlc-phase-inception.mdc", "Inception phase rule (agent-decided read instruction)", "dist/cursor/.cursor/rules/aidlc-phase-inception.mdc"],
+      ["rules/aidlc-phase-construction.mdc", "Construction phase rule (agent-decided read instruction)", "dist/cursor/.cursor/rules/aidlc-phase-construction.mdc"],
+      ["rules/aidlc-phase-operation.mdc", "Operation phase rule (agent-decided read instruction)", "dist/cursor/.cursor/rules/aidlc-phase-operation.mdc"],
     ] as const) {
       results.push({
         pass: existsSync(join(projectDir, harness, file)),

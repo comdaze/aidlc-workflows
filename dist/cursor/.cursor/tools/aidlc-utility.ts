@@ -93,6 +93,7 @@ import {
   harnessDataPath,
   pluginsEnabled,
   selectionAwareDefaultScope,
+  resolveDefaultScope,
   scalarField,
   stageEnabledBySelection,
   stagesInScope,
@@ -1301,11 +1302,15 @@ function handleDoctor(projectDir: string, flags: Record<string, string> = {}): v
     });
   } else if (harness === ".cursor") {
     // Cursor: hooks.json (the hook wiring), cli.json (permissions), and the
-    // method rule are all inside .cursor/.
+    // standing + phase method rule pointers are all inside .cursor/.
     for (const [file, what, from] of [
       ["hooks.json", "hook wiring", "dist/cursor/.cursor/hooks.json"],
       ["cli.json", "Shell(bun) permission pre-approval", "dist/cursor/.cursor/cli.json"],
-      ["rules/aidlc.mdc", "method rule (alwaysApply read instruction)", "dist/cursor/.cursor/rules/aidlc.mdc"],
+      ["rules/aidlc.mdc", "standing method rule (alwaysApply read instruction)", "dist/cursor/.cursor/rules/aidlc.mdc"],
+      ["rules/aidlc-phase-ideation.mdc", "Ideation phase rule (agent-decided read instruction)", "dist/cursor/.cursor/rules/aidlc-phase-ideation.mdc"],
+      ["rules/aidlc-phase-inception.mdc", "Inception phase rule (agent-decided read instruction)", "dist/cursor/.cursor/rules/aidlc-phase-inception.mdc"],
+      ["rules/aidlc-phase-construction.mdc", "Construction phase rule (agent-decided read instruction)", "dist/cursor/.cursor/rules/aidlc-phase-construction.mdc"],
+      ["rules/aidlc-phase-operation.mdc", "Operation phase rule (agent-decided read instruction)", "dist/cursor/.cursor/rules/aidlc-phase-operation.mdc"],
     ] as const) {
       results.push({
         pass: existsSync(join(projectDir, harness, file)),
@@ -3492,10 +3497,10 @@ function ensureWorkspaceDirs(projectDir: string): void {
 // the BORN intent's record (the active-intent cursor set first makes the
 // default-resolving state/audit helpers resolve there).
 function handleIntentBirth(projectDir: string, flags: Record<string, string>): void {
-  // Default to poc when --scope is omitted. Matches the orchestrator's
-  // ultimate fallback in SKILL.md and makes direct tool invocations
-  // (`bun aidlc-utility.ts intent-birth`) work without extra flags.
-  const scope = flags.scope || "poc";
+  // Default when --scope is omitted; selection-aware so a plugin-only install
+  // (where the core "poc" default is deselected) resolves to its nominated
+  // freeform default instead of crashing with "Unknown scope".
+  const scope = flags.scope || resolveDefaultScope("poc");
   if (!validScopes().has(scope)) {
     die(
       `Unknown scope: "${scope}". Valid scopes: ${[...validScopes()].join(", ")}.`
@@ -5295,11 +5300,11 @@ function handleDetectScope(
 //     non-env path (CLI flag, keyword detection, or hard-coded fallback).
 //   - Env set to a valid scope: exit 0, print `scope=<value>` to stdout.
 //     The orchestrator synthesizes `--scope <value>` into $ARGUMENTS.
-//   - Env names a disabled/unknown scope while core is disabled and exactly one
-//     plugin scope owner is enabled: exit 0, print that plugin owner's
-//     selection-aware default scope.
-//   - Otherwise, env set to an invalid value: exit 1, print the canonical error
-//     message to stderr. The orchestrator stops without mutating state.
+//   - Env names an installed but disabled scope: resolve the selection-aware
+//     default. This preserves plugin-only installs whose existing config names
+//     a deselected core scope such as `feature`.
+//   - Env names an unknown scope: exit 1 with the canonical error. Explicit
+//     typos never enter the internal default-fallback path.
 //
 // Centralising validation here (instead of leaving it to LLM prose) guarantees
 // the error message shape and guarantees invalid env never reaches scope-change
@@ -5312,6 +5317,11 @@ function handleResolveEnvScope(): void {
     return; // unset — no output, exit 0
   }
   if (!validScopes().has(envScope)) {
+    if (loadScopeMetadataAll()[envScope] === undefined) {
+      die(
+        `Invalid AWS_AIDLC_DEFAULT_SCOPE "${envScope}". Valid scopes: ${[...validScopes()].join(", ")}.`
+      );
+    }
     const fallback = selectionAwareDefaultScope(envScope);
     if (!fallback.error && validScopes().has(fallback.scope)) {
       if (fallback.note) {

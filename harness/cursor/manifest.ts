@@ -19,12 +19,16 @@
 //     The task tool targets them by name — no emitted twins.
 //   - skills: .cursor/skills/<name>/SKILL.md is Cursor's native skill layout,
 //     invoked as /<name> with inline argument forwarding (live-verified). The
-//     generated stage runners land there via the standard runner-gen step.
+//     generated stage runners land there via the standard runner-gen step;
+//     three authored utility skills add /aidlc-status, /aidlc-jump, and
+//     /aidlc-scope without relying on Cursor's legacy commands directory.
 //   - rules: Cursor loads ONLY .mdc files with frontmatter from
 //     .cursor/rules/ (a plain .md there is ignored, and @-import lines do NOT
 //     expand — both live-verified). The method include is therefore split:
-//     rules/aidlc.mdc (alwaysApply) carries the read instruction, and the
-//     sessionStart hook injects the live workflow context.
+//     rules/aidlc.mdc always carries org/team/project, while four agent-decided
+//     phase pointers keep phase guidance relevant (live-verified: a phase
+//     question loads only the matching phase rule; an off-topic prompt loads
+//     none). The sessionStart hook injects the live workflow context.
 //   - hooks: .cursor/hooks.json wires camelCase events (matcher-free; the
 //     adapter self-filters) to aidlc-cursor-adapter.ts, which normalizes
 //     payloads and subprocess-pipes into the byte-shared core hooks.
@@ -54,11 +58,20 @@ const manifest: HarnessManifest = {
     // The orchestrator skill — Cursor-native layout, /aidlc invocation.
     { src: "skills/aidlc/SKILL.md", dst: "skills/aidlc/SKILL.md" },
     { src: "skills/aidlc/question-rendering.md", dst: "skills/aidlc/question-rendering.md" },
-    // The AIDLC method rule stub: .cursor/rules/aidlc.mdc (alwaysApply).
-    // Cursor has no @-import expansion, so unlike Claude's stub this carries
-    // a READ instruction naming the active space's method files; /aidlc space
-    // re-points the explicit paths in place (aidlc-includes.ts cursor arm).
+    // Cursor-native shortcut skills. Cursor's commands/ surface is legacy;
+    // skills are the current slash-invocation primitive.
+    { src: "skills/aidlc-status/SKILL.md", dst: "skills/aidlc-status/SKILL.md" },
+    { src: "skills/aidlc-jump/SKILL.md", dst: "skills/aidlc-jump/SKILL.md" },
+    { src: "skills/aidlc-scope/SKILL.md", dst: "skills/aidlc-scope/SKILL.md" },
+    // AIDLC method pointers: standing layers always apply; phase guidance is
+    // agent-decided. Cursor has no @-import expansion, so each carries a READ
+    // instruction naming the active-space file. /aidlc space re-points every
+    // explicit path in place (aidlc-includes.ts cursor arm).
     { src: "rules-aidlc.mdc", dst: "rules/aidlc.mdc" },
+    { src: "rules-aidlc-phase-ideation.mdc", dst: "rules/aidlc-phase-ideation.mdc" },
+    { src: "rules-aidlc-phase-inception.mdc", dst: "rules/aidlc-phase-inception.mdc" },
+    { src: "rules-aidlc-phase-construction.mdc", dst: "rules/aidlc-phase-construction.mdc" },
+    { src: "rules-aidlc-phase-operation.mdc", dst: "rules/aidlc-phase-operation.mdc" },
     // The hook shim + wiring (the adapter is authored; the core hook bodies
     // beside it are packaged byte-identical to the Claude harness).
     { src: "hooks/aidlc-cursor-adapter.ts", dst: "hooks/aidlc-cursor-adapter.ts" },

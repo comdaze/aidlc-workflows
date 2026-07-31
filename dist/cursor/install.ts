@@ -85,7 +85,7 @@ function activeSpaceFor(targetRoot: string): string {
 
 function managedContent(rel: string, source: Buffer, activeSpace: string): Buffer {
   if (
-    rel === ".cursor/rules/aidlc.mdc" ||
+    /^\.cursor\/rules\/.+\.mdc$/.test(rel) ||
     /^\.cursor\/agents\/[^/]+-agent\.md$/.test(rel)
   ) {
     return Buffer.from(
