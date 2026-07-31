@@ -39,7 +39,7 @@ For full documentation, see `docs/guide/` (User Guide), `docs/harness-engineerin
 This is the same AI-DLC core that ships to every harness — one deterministic engine, state machine, audit trail, and stage set, rendered onto GitHub Copilot. On Copilot:
 
 - **One install, two surfaces**: Copilot CLI and VS Code agent mode read the same `.github/{skills,agents,hooks}` tree and this AGENTS.md. Skills, personas, and hooks behave identically; anything surface-specific is called out below.
-- Approval gates and questions render as **numbered prose options** (no structured-question widget); the questions FILE with `[Answer]:` tags remains the source of truth.
+- Approval gates and questions use the active surface's **native picker** (`ask_user` on the CLI, `vscode/askQuestions` in VS Code), with numbered prose only when that tool is unavailable; the questions FILE with `[Answer]:` tags remains the source of truth.
 - Hooks ride the **AIDLC adapter** (`.aidlc/hooks/aidlc-copilot-adapter.ts`, wired by `.github/hooks/aidlc.json`): reviewer read-scope enforcement and the state-transition guard run before tools **and actually block** (PreToolUse deny is native; live-verified on the CLI, documented on VS Code); audit and sensors cover Write/Edit; runtime-compile, presence minting, and pre-compaction state validation run from the matching events.
 - The forwarding-loop enforcement (the Stop hook) **blocks natively** (`decision: block`) — same contract as Claude Code.
 - Reviewer identity on subagent tool calls is correlated from SubagentStart/SubagentStop (payloads carry no per-call agent field); with several subagents in flight the scope hook fails open for the ambiguous call and the prose §12a bound governs.

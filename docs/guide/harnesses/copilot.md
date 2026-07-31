@@ -86,8 +86,10 @@ git checkout v2
 - **One install, two surfaces.** Skills, personas, instructions, and hooks
   behave identically on the CLI and in VS Code agent mode; the divergences
   below are called out explicitly.
-- **Questions render as numbered prose options** (no structured-question
-  widget); the questions FILE with `[Answer]:` tags stays the source of truth.
+- **Questions use a native picker on both surfaces:** `ask_user` on the CLI and
+  `vscode/askQuestions` in VS Code. Numbered prose is a fallback only when the
+  native tool is unavailable or disabled (for example CLI `--no-ask-user`);
+  the questions FILE with `[Answer]:` tags stays the source of truth.
 - **Hooks enforce natively.** The adapter
   (`.aidlc/hooks/aidlc-copilot-adapter.ts`, wired by
   `.github/hooks/aidlc.json`) converts a core-guard block into Copilot's

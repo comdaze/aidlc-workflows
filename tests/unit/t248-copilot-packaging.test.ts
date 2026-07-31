@@ -137,7 +137,7 @@ describe("t248 dist/copilot packaging parity + shell shape", () => {
     }
   });
 
-  test("5: skills tree carries the orchestrator + generated runners", () => {
+  test("5: skills tree carries the orchestrator, native question mapping, and generated runners", () => {
     const skills = readdirSync(join(SHELL, "skills"));
     expect(skills).toContain("aidlc");
     expect(skills).toContain("aidlc-init");
@@ -147,6 +147,18 @@ describe("t248 dist/copilot packaging parity + shell shape", () => {
     expect(orchestrator).toContain("Copilot harness");
     expect(orchestrator).toContain("bun .aidlc/tools/aidlc-orchestrate.ts next");
     expect(orchestrator).not.toContain("{{HARNESS_DIR}}");
+    expect(orchestrator).toContain("`ask_user`");
+    expect(orchestrator).toContain("`vscode/askQuestions`");
+    expect(orchestrator).not.toContain("no structured-question widget");
+    const questionRendering = readFileSync(
+      join(SHELL, "skills", "aidlc", "question-rendering.md"),
+      "utf-8",
+    );
+    expect(questionRendering).toContain("`ask_user`");
+    expect(questionRendering).toContain("`vscode/askQuestions`");
+    expect(questionRendering).toContain("`allow_freeform: true`");
+    expect(questionRendering).toContain("`questions[].allowFreeformInput: true`");
+    expect(questionRendering).not.toContain("Neither Copilot surface");
     const harnessData = JSON.parse(
       readFileSync(join(ENGINE, "tools", "data", "harness.json"), "utf-8"),
     ) as { name?: string };

@@ -1367,6 +1367,22 @@ function nodeForSlug(slug: string): GraphStage | undefined {
   return loadGraph().find((s) => s.slug === slug);
 }
 
+// Resolve the approved plan's action for one stage. The state suffix is the
+// live plan (including recomposition) and therefore wins over the stock scope
+// grid. Keep this separate from GraphStage.execution: ALWAYS|CONDITIONAL
+// describes stage-authored applicability, not whether this workflow approved
+// the stage for execution.
+function effectivePlanAction(
+  slug: string,
+  scope: string,
+  stateContent: string | null,
+): "EXECUTE" | "SKIP" | undefined {
+  const stateAction = stateContent
+    ? parseStateStageSuffixes(stateContent).get(slug)
+    : undefined;
+  return stateAction ?? loadScopeMapping()[scope]?.stages[slug];
+}
+
 // The `next` handler — pure read, emits exactly one directive.
 function handleNext(args: string[], projectDir: string | undefined): void {
   const flags = parseNextFlags(args);
@@ -1901,15 +1917,42 @@ function handleNext(args: string[], projectDir: string | undefined): void {
   const currentState = checkboxStateOf(checkboxes, currentSlug);
 
   // If the current stage is still in-flight (pending / in-progress /
-  // awaiting-approval / revising), the next move is to run THAT stage — the
-  // workflow has not yet completed it. If it is already completed or skipped,
-  // walk to the next EXECUTE stage for the scope (state-override aware).
+  // awaiting-approval / revising), the next move is normally to run THAT stage
+  // — the workflow has not yet completed it. A plan-SKIP mismatch is recovered
+  // below instead. If it is already completed or skipped, walk to the next
+  // EXECUTE stage for the scope (state-override aware).
   const currentIsInFlight =
     currentState === "pending" ||
     currentState === "in-progress" ||
     currentState === "awaiting-approval" ||
     currentState === "revising" ||
     currentState === undefined; // no checkbox row → treat as the active stage
+
+  // A stale/corrupt cursor can still point at an in-flight row whose approved
+  // plan suffix is SKIP. Never turn that mismatch into permission to run the
+  // stage, regardless of the graph's ALWAYS|CONDITIONAL applicability axis.
+  // `next` stays read-only: name the report-owned recovery transition, which
+  // records the skip and routes to the next effective EXECUTE stage.
+  if (
+    currentIsInFlight &&
+    effectivePlanAction(currentSlug, scope, stateContent) === "SKIP"
+  ) {
+    if (currentState !== "in-progress" && currentState !== "revising") {
+      emit(errorDirective(
+        `Stage "${currentSlug}" is SKIP in the approved workflow plan but its active cursor state is ` +
+          `"${currentState ?? "missing"}". Refusing to emit run-stage; repair the inconsistent state before continuing.`,
+      ));
+      return;
+    }
+    const reason = "stage is SKIP in the approved workflow plan";
+    emit(printDirective(
+      `Stage "${currentSlug}" is SKIP in the approved workflow plan but is still the active cursor. ` +
+        `Do not run this stage. Run \`bun ${harnessDir()}/tools/aidlc-orchestrate.ts report ` +
+        `--stage ${shellArg(currentSlug)} --result skipped --reason ${shellArg(reason)}\` ` +
+        "to recover the stale pointer, then re-run `next` to continue.",
+    ));
+    return;
+  }
 
   if (currentIsInFlight) {
     // Under an autonomy grant, an eligible per-unit build stage fans out as a
@@ -3615,7 +3658,8 @@ function handleReport(args: string[], projectDir: string | undefined): void {
       ));
       return;
     }
-    if (node.execution !== "CONDITIONAL") {
+    const planAction = effectivePlanAction(slug, scope, stateContent);
+    if (node.execution !== "CONDITIONAL" && planAction !== "SKIP") {
       emit(errorDirective(
         `Stage "${slug}" is execution: ${node.execution}; only a CONDITIONAL stage can report skipped.`,
       ));

@@ -8,22 +8,56 @@ is the one place that binds that contract to a concrete mechanism.
 
 ## Mechanism
 
-Neither Copilot surface (CLI or VS Code agent mode) exposes a structured-question tool to project skills, so every structured question renders
-as **numbered prose options in chat**, and the user answers with a number (or
-free text). Render the spec like this:
+Both Copilot surfaces expose a native question picker, but the tool names and
+schemas differ. Use the native tool available in the active surface:
 
-```question
-prompt: "[Stage Name] complete. How would you like to proceed?"
-header: Approval
-multiSelect: false
-options:
-  - label: Approve
-    description: Continue to [next stage]
-  - label: Request Changes
-    description: Provide revision feedback
-```
+- **Copilot CLI:** `ask_user`
+- **VS Code agent mode:** `vscode/askQuestions` (tool reference
+  `askQuestions`)
 
-becomes:
+Do not render numbered prose when either native tool is available. Numbered
+prose is only the fallback for a session where the tool is absent or disabled
+(for example CLI `--no-ask-user`) or a tool call fails.
+
+### Copilot CLI — `ask_user`
+
+The CLI schema is `question: string`, `choices: string[]`, and
+`allow_freeform: boolean`.
+
+| Spec field | `ask_user` field |
+|------------|------------------|
+| `header` + `prompt` | `question` (header first) |
+| `options[]` | `choices[]`, in spec order |
+| free-text escape | `allow_freeform: true` |
+
+The CLI has no separate option-description field. Render each choice as
+`<label> — <description>` so the human sees both parts, then map the returned
+choice back to the source option's exact `label` before recording or reporting
+it. For `multiSelect: true`, keep `allow_freeform: true` and tell the human in
+the question text that they may enter multiple exact labels; do not invent a
+`Done` option.
+
+### VS Code — `vscode/askQuestions`
+
+Pass one object in the tool's `questions` array:
+
+| Spec field | `vscode/askQuestions` field |
+|------------|------------------------------------|
+| `header` | `questions[].header` |
+| `prompt` | `questions[].question` |
+| `multiSelect` | `questions[].multiSelect` |
+| `options[].label` | `questions[].options[].label` |
+| `options[].description` | `questions[].options[].description` |
+| recommended option | `questions[].options[].recommended: true` |
+| free-text escape | `questions[].allowFreeformInput: true` |
+
+Preserve option order unless the spec identifies a recommended option; then
+put that option first. The native free-text input is the `Other` escape, so do
+not add an explicit `Other` option.
+
+### Numbered-prose fallback
+
+Only when neither native tool can be called, render:
 
 ```
 **Approval** — [Stage Name] complete. How would you like to proceed?
@@ -35,26 +69,22 @@ becomes:
 Reply with a number (or just tell me).
 ```
 
-Rules:
+For `multiSelect: true`, say "Reply with all numbers that apply (e.g. 1, 3)."
 
-- **Approval gate `[next stage]`**: on an approval question, render the
-  `Continue to [next stage]` placeholder from the run-stage directive's
-  `next_stage` field verbatim (e.g. `Continue to NFR Requirements`); render
-  `Complete workflow` when `next_stage` is null. Never guess the next stage.
-- **Bold the header**, then the prompt, then the numbered options in spec
-  order. When a question has a recommended option, list it FIRST and append
-  "(Recommended)" to its label.
-- **Always append an "Other" escape** as the final number — the spec's
-  options never include one (on Claude Code the UI provides it; here you
-  render it).
-- **multiSelect: true** → say "Reply with all numbers that apply (e.g. 1, 3)."
-- **Answer capture**: map the user's number back to the exact option `label`
-  and record that label verbatim (protocol: never summarize User Input). A
+Rules (all tracks):
+
+- **Approval gate `[next stage]`**: render the `Continue to [next stage]`
+  placeholder from the run-stage directive's `next_stage` field verbatim
+  (e.g. `Continue to NFR Requirements`); render `Complete workflow` when
+  `next_stage` is null. Never guess the next stage.
+- **Answer capture**: map the response to the exact source option `label` and
+  record that label verbatim (protocol: never summarize User Input). A
   free-text reply that clearly matches an option counts as that option;
-  anything else is an "Other" answer — treat it per the protocol (discuss,
-  then re-ask for a final pick).
-- **Batching**: no harness limit on options per question, but keep batches
-  readable — at most ~4 questions per message, and for 5+ options prefer one
-  message per question. The questions FILE remains the authoritative record.
-- **No emergent options**: render exactly the spec's options (+ Other). The
-  NO EMERGENT BEHAVIOR rule applies to the rendering, not just the spec.
+  anything else is an `Other` answer — discuss it, then re-ask for a final pick.
+- **No emergent options**: render exactly the spec's options plus the native or
+  prose free-text escape.
+- **Batching**: VS Code may carry several specs in one `questions` array.
+  `ask_user` asks one question per call. Keep batches readable — at most four
+  questions per turn. The questions FILE remains the authoritative record.
+- A skipped, cancelled, or automatic tool response is not human approval.
+  Preserve the protocol's hard turn stop and wait for an explicit human choice.
