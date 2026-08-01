@@ -1,6 +1,16 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [2.5.34] - 2026-08-01
+
+Reverse Engineering no longer silently discards a prior intent's code knowledge on rerun. The shared per-repository codekb now records and compares actual scan coverage before replacement, keeps full-root freshness checks stable, and resolves every repository before advancing a multi-repo stage. **Upgrade:** re-copy your `dist/<harness>/` shell into the project; existing stores predate scope tracking and report `UNKNOWN_SCOPE` until their first post-upgrade scan writes the new scope block.
+
+* `reverse-engineering-timestamp.md` now ends with a structured `## Scope of Analysis` block recording full/partial coverage, analyzed and shallow paths, components, intent, and a content fingerprint.
+* The direct `aidlc-utility codekb-scope-diff` verb reports `NO_STORE`/`CURRENT`/`STALE`/`UNVERIFIED`/`UNKNOWN_SCOPE`, compares incoming coverage as `COVERS` or `NARROWER`, and mints working-tree fingerprints for recorded paths.
+* Full-root fingerprints exclude the framework-owned `aidlc/` tree so writing codekb, scope-draft, state, and audit files does not immediately make a store stale. Invalid or unmatched pathspecs now produce `unknown`/`UNVERIFIED` instead of Git's stable empty-tree hash.
+* `kind: full` now requires explicit repository-root (`./`) coverage, and a full store can only be replaced without warning by another valid full scan.
+* Multi-repo reruns resolve all reuse/rescan decisions before one lifecycle report, scan only repositories that need replacement, and use repository-specific scope drafts so parallel scans cannot overwrite one another.
+
 ## [2.5.33] - 2026-08-01
 
 Stage rules are now delivered deterministically instead of depending on the conductor choosing to read paths. The engine emits the active-space rule bundle as bounded `load-steering` directives before `run-stage`, and reviewer checklists are absorbed into reviewer agent bodies at build time - closing the observed skip where stages ran with none of their org/phase memory applied. **Upgrade:** re-copy your `dist/<harness>/` shell into the project so the updated engine, skills, agents, and hooks are installed.
