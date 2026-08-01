@@ -3,12 +3,12 @@
 AI-DLC provides three ways to interact with agents during stages, plus approval gates that keep you in control at every decision point.
 
 > **Harness note.** Gates and questions render differently per harness. Claude
-> Code and GitHub Copilot use their native question pickers; Codex uses its
-> picker when enabled. Kiro, opencode, and sessions where a native tool is
-> unavailable render numbered-prose options. The questions file remains the
-> source of truth. The *semantics* — when a gate fires, what it asks, that you
-> stay in control — are identical, since they live in the engine. See
-> [Running on other harnesses](harnesses/README.md).
+> Code uses its native question picker; Codex uses its picker when enabled.
+> Kiro, opencode, and GitHub Copilot render numbered-prose options (Copilot's
+> picker results do not fire the trusted human-presence event). The questions
+> file remains the source of truth. The *semantics* — when a gate fires, what
+> it asks, that you stay in control — are identical, since they live in the
+> engine. See [Running on other harnesses](harnesses/README.md).
 
 ---
 

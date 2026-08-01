@@ -6,9 +6,8 @@
 // WHAT. Each case pipes a fixture from tests/fixtures/copilot-hook-payloads/
 // (field-verbatim captures off Copilot CLI 1.0.74 — the compat-spike corpus
 // at tmp/copilot-compat-spike/proj/hookout/) into
-// `bun dist/copilot/.aidlc/hooks/aidlc-copilot-adapter.ts <target>` inside a
-// scratch project carrying an active workflow state, then asserts the
-// observable core-hook effect:
+// the generated Copilot adapter inside a scratch project carrying an active
+// workflow state, then asserts the observable core-hook effect:
 //   stop           → block fields at top level for CLI and under
 //                    hookSpecificOutput for VS Code; silent with no state.
 //   session-start  → additionalContext at top level for CLI and under
@@ -273,6 +272,7 @@ describe("t249 Copilot hook adapter (live-captured payload fixtures)", () => {
 
   test("13: reviewer-scope forwarding blocks a sibling read via the ledger identity", () => {
     const dir = scratchProject(true);
+    const cliHostSessionId = String(FIXTURES.subagentStart.sessionId);
     // 12a step-1 dispatch record: the architecture reviewer is scoped to U01.
     const record = seededRecordDir(dir);
     mkdirSync(record, { recursive: true });
@@ -290,6 +290,7 @@ describe("t249 Copilot hook adapter (live-captured payload fixtures)", () => {
     runAdapter(dir, "subagent-start", {
       ...FIXTURES.subagentStart,
       cwd: dir,
+      sessionId: cliHostSessionId,
       agentName: "aidlc-architecture-reviewer-agent",
     });
     // A sibling-unit read from inside the delegation: subagent-originated
@@ -315,6 +316,7 @@ describe("t249 Copilot hook adapter (live-captured payload fixtures)", () => {
     runAdapter(dir, "log-subagent", {
       ...FIXTURES.subagentStop,
       cwd: dir,
+      session_id: cliHostSessionId,
       agent_name: "aidlc-architecture-reviewer-agent",
     });
     const after = runAdapter(dir, "pre-tool", {
@@ -377,6 +379,7 @@ describe("t249 Copilot hook adapter (live-captured payload fixtures)", () => {
 
   test("18: VS Code agent_type/agent_id populate and clear reviewer identity", () => {
     const dir = scratchProject(true);
+    const hostSessionId = "11111111-2222-4333-8444-555555555555";
     const record = seededRecordDir(dir);
     mkdirSync(record, { recursive: true });
     writeFileSync(
@@ -390,6 +393,7 @@ describe("t249 Copilot hook adapter (live-captured payload fixtures)", () => {
       "utf-8",
     );
     const identity = {
+      session_id: hostSessionId,
       agent_type: "aidlc-architecture-reviewer-agent",
       agent_id: "vscode-agent-1",
     };
@@ -402,7 +406,7 @@ describe("t249 Copilot hook adapter (live-captured payload fixtures)", () => {
     const sibling = join(record, "construction", "U02", "functional-design", "design.md");
     const blocked = runAdapter(dir, "pre-tool", {
       hook_event_name: "PreToolUse",
-      session_id: "toolu_vscode000000000001",
+      session_id: hostSessionId,
       cwd: dir,
       toolName: "readFile",
       toolInput: { filePath: sibling },
@@ -422,7 +426,7 @@ describe("t249 Copilot hook adapter (live-captured payload fixtures)", () => {
 
     const allowed = runAdapter(dir, "pre-tool", {
       hook_event_name: "PreToolUse",
-      session_id: "toolu_vscode000000000002",
+      session_id: hostSessionId,
       cwd: dir,
       toolName: "readFile",
       toolInput: { filePath: sibling },

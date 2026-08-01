@@ -30,11 +30,13 @@ import { spawnSync } from "node:child_process";
 import {
   cpSync,
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
   rmSync,
   statSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative, sep } from "node:path";
@@ -137,7 +139,7 @@ describe("t248 dist/copilot packaging parity + shell shape", () => {
     }
   });
 
-  test("5: skills tree carries the orchestrator, native question mapping, and generated runners", () => {
+  test("5: skills tree keeps questions on the human-presence-safe prose path", () => {
     const skills = readdirSync(join(SHELL, "skills"));
     expect(skills).toContain("aidlc");
     expect(skills).toContain("aidlc-init");
@@ -147,18 +149,15 @@ describe("t248 dist/copilot packaging parity + shell shape", () => {
     expect(orchestrator).toContain("Copilot harness");
     expect(orchestrator).toContain("bun .aidlc/tools/aidlc-orchestrate.ts next");
     expect(orchestrator).not.toContain("{{HARNESS_DIR}}");
-    expect(orchestrator).toContain("`ask_user`");
-    expect(orchestrator).toContain("`vscode/askQuestions`");
-    expect(orchestrator).not.toContain("no structured-question widget");
+    expect(orchestrator).toContain("numbered prose");
+    expect(orchestrator).toContain("picker results do not fire");
     const questionRendering = readFileSync(
       join(SHELL, "skills", "aidlc", "question-rendering.md"),
       "utf-8",
     );
-    expect(questionRendering).toContain("`ask_user`");
-    expect(questionRendering).toContain("`vscode/askQuestions`");
-    expect(questionRendering).toContain("`allow_freeform: true`");
-    expect(questionRendering).toContain("`questions[].allowFreeformInput: true`");
-    expect(questionRendering).not.toContain("Neither Copilot surface");
+    expect(questionRendering).toContain("numbered prose options in chat");
+    expect(questionRendering).toContain("does not fire the trusted `UserPromptSubmit`");
+    expect(questionRendering).toContain("Calling either picker would therefore deadlock");
     const harnessData = JSON.parse(
       readFileSync(join(ENGINE, "tools", "data", "harness.json"), "utf-8"),
     ) as { name?: string };
@@ -194,6 +193,61 @@ describe("t248 dist/copilot packaging parity + shell shape", () => {
       expect(result.status).not.toBe(0);
       expect(output).toContain("✗  aidlc-state-transition-guard.ts present");
       expect(output).toContain("✗  AGENTS.md present (onboarding + method imports)");
+    } finally {
+      rmSync(project, { recursive: true, force: true });
+    }
+  });
+
+  test("7: doctor parses real JSONC trust config and fails malformed existing config", () => {
+    const project = mkdtempSync(join(tmpdir(), "t248-copilot-jsonc-"));
+    try {
+      cpSync(COPILOT_ROOT, project, { recursive: true });
+      const copilotHome = join(project, ".copilot-home");
+      mkdirSync(copilotHome, { recursive: true });
+      const configPath = join(copilotHome, "config.json");
+      const runDoctor = () =>
+        spawnSync(
+          process.execPath,
+          [
+            join(project, ".aidlc", "tools", "aidlc-utility.ts"),
+            "doctor",
+            "--project-dir",
+            project,
+          ],
+          {
+            cwd: project,
+            encoding: "utf-8",
+            env: {
+              ...process.env,
+              AIDLC_HARNESS_DIR: ".aidlc",
+              AIDLC_HARNESS_NAME: "copilot",
+              COPILOT_HOME: copilotHome,
+            },
+          },
+        );
+
+      writeFileSync(
+        configPath,
+        `{
+  // Copilot writes JSONC, not strict JSON.
+  "trustedFolders": [
+    ${JSON.stringify(project)}, // inline comments are valid
+  ],
+}
+`,
+      );
+      const valid = runDoctor();
+      expect(valid.status).toBe(0);
+      expect(`${valid.stdout}${valid.stderr}`).toContain(
+        "✓  project folder in ~/.copilot/config.json trustedFolders",
+      );
+
+      writeFileSync(configPath, '{ "trustedFolders": [\n');
+      const malformed = runDoctor();
+      expect(malformed.status).not.toBe(0);
+      expect(`${malformed.stdout}${malformed.stderr}`).toContain(
+        "✗  could not parse ~/.copilot/config.json",
+      );
     } finally {
       rmSync(project, { recursive: true, force: true });
     }

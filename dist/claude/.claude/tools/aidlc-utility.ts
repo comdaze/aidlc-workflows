@@ -1375,12 +1375,12 @@ function handleDoctor(projectDir: string, flags: Record<string, string> = {}): v
     // Folder trust: untrusted project hooks silently never fire (no warning
     // anywhere on the Copilot side — the doctor is the only surface that says
     // so). trustedFolders lives in ~/.copilot/config.json (COPILOT_HOME).
-    // Tolerances, all field-observed: the CLI writes the file with //-comment
-    // headers (JSONC — strip before parsing), entries may carry trailing
+    // Tolerances, all field-observed: the CLI writes JSONC (line/block/inline
+    // comments plus trailing commas), entries may carry trailing
     // slashes, and the project may be reached via a symlink (compare
-    // realpath-normalized). Unreadable/absent config is ADVISORY, not a
-    // failure: a VS Code-only install has no CLI and no config, and VS Code
-    // manages its own workspace trust.
+    // realpath-normalized). An absent config is ADVISORY because a VS
+    // Code-only install has no CLI config; an existing unreadable or malformed
+    // config fails because CLI hook trust cannot be verified.
     try {
       const configPath = join(
         process.env.COPILOT_HOME ?? join(process.env.HOME ?? "", ".copilot"),
@@ -1393,9 +1393,9 @@ function handleDoctor(projectDir: string, flags: Record<string, string> = {}): v
             "~/.copilot/config.json absent — fine for VS Code-only installs; for the CLI, one interactive run records folder trust (hooks silently no-op untrusted)",
         });
       } else {
-        const raw = readFileSync(configPath, "utf-8").replace(/^\s*\/\/.*$/gm, "");
+        const raw = readFileSync(configPath, "utf-8");
         const trusted =
-          (JSON.parse(raw) as { trustedFolders?: string[] }).trustedFolders ?? [];
+          (Bun.JSONC.parse(raw) as { trustedFolders?: string[] }).trustedFolders ?? [];
         const norm = (p: string) => {
           let out = p.replace(/[/\\]+$/, "");
           try {
@@ -1415,9 +1415,11 @@ function handleDoctor(projectDir: string, flags: Record<string, string> = {}): v
       }
     } catch {
       results.push({
-        pass: true,
+        pass: false,
         label:
-          "could not parse ~/.copilot/config.json to verify folder trust — verify trustedFolders manually (CLI hooks silently no-op untrusted)",
+          "could not parse ~/.copilot/config.json to verify folder trust (CLI hooks silently no-op untrusted)",
+        fix:
+          "repair ~/.copilot/config.json as valid JSONC, then re-run doctor",
       });
     }
     // Headless reminder (advisory pass-with-label): -p/prompt-mode runs skip

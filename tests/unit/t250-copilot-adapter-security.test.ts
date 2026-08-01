@@ -16,10 +16,11 @@
 //     adapter statically imports ../tools/aidlc-{audit,lib}.ts, so the rig
 //     mirrors that sibling layout with stub tools.
 //
-// WHAT (guidance §1.1/§3): fail-open on parse error and unknown tool (exit 0,
-// never throw), path confinement (an out-of-project file_path is not forwarded
-// to a core hook, and the call is still allowed), and exit-code forwarding
-// (a core hook's exit 2 becomes the deny projection, a non-2 does not).
+// WHAT (guidance §1.1/§3): advisory fail-open on parse error and unknown tool
+// (exit 0, never throw), Stop dispatch despite malformed input, realpath-based
+// path confinement, locked subagent identity transactions, and exit-code
+// forwarding (a core hook's exit 2 becomes the deny projection, a non-2 does
+// not).
 //
 // WHY SUBPROCESS. Fail-open is an exit-code contract; only a real subprocess
 // exercises process.exit()/uncaught-throw faithfully.
@@ -27,6 +28,7 @@
 // covers: file:hooks/aidlc-reviewer-scope.ts, file:hooks/aidlc-state-transition-guard.ts, file:hooks/aidlc-audit-logger.ts
 
 import { describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import {
   copyFileSync,
@@ -36,6 +38,7 @@ import {
   readdirSync,
   realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -108,6 +111,7 @@ interface Scratch {
   projectRoot: string;
   hooksDir: string;
   captureDir: string;
+  ledgerPath: string;
   cleanup: () => void;
 }
 
@@ -117,6 +121,10 @@ function scratch(): Scratch {
   const hooksDir = join(projectRoot, ".aidlc", "hooks");
   const toolsDir = join(projectRoot, ".aidlc", "tools");
   const captureDir = join(projectRoot, "capture");
+  const ledgerPath = join(
+    tmpdir(),
+    `aidlc-copilot-subagents-${createHash("sha256").update(projectRoot).digest("hex").slice(0, 16)}.json`,
+  );
   mkdirSync(hooksDir, { recursive: true });
   mkdirSync(toolsDir, { recursive: true });
   mkdirSync(captureDir, { recursive: true });
@@ -130,7 +138,12 @@ function scratch(): Scratch {
     projectRoot,
     hooksDir,
     captureDir,
-    cleanup: () => rmSync(projectRoot, { recursive: true, force: true }),
+    ledgerPath,
+    cleanup: () => {
+      rmSync(projectRoot, { recursive: true, force: true });
+      rmSync(ledgerPath, { force: true });
+      rmSync(`${ledgerPath}.lock`, { recursive: true, force: true });
+    },
   };
 }
 
@@ -160,6 +173,34 @@ function runAdapter(
   return { stdout: r.stdout ?? "", stderr: r.stderr ?? "", code: r.status ?? -1 };
 }
 
+async function runAdapterAsync(
+  s: Scratch,
+  target: string,
+  payload: unknown,
+): Promise<{ stdout: string; stderr: string; code: number }> {
+  const proc = Bun.spawn(
+    [process.execPath, join(s.hooksDir, "aidlc-copilot-adapter.ts"), target],
+    {
+      cwd: s.projectRoot,
+      stdin: Buffer.from(typeof payload === "string" ? payload : JSON.stringify(payload)),
+      stdout: "pipe",
+      stderr: "pipe",
+      env: {
+        ...process.env,
+        AIDLC_PROJECT_DIR: undefined,
+        CLAUDE_PROJECT_DIR: undefined,
+        T250_CAPTURE: s.captureDir,
+      } as NodeJS.ProcessEnv,
+    },
+  );
+  const [stdout, stderr, code] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+  return { stdout, stderr, code };
+}
+
 function reached(captureDir: string, hookName: string): number {
   let names: string[];
   try {
@@ -173,17 +214,51 @@ function reached(captureDir: string, hookName: string): number {
     .filter((l) => l.trim().length > 0).length;
 }
 
+function capturedInputs(
+  captureDir: string,
+  hookName: string,
+): Array<Record<string, unknown>> {
+  try {
+    return readFileSync(join(captureDir, `${hookName}.jsonl`), "utf-8")
+      .split("\n")
+      .filter((line) => line.trim().length > 0)
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+  } catch {
+    return [];
+  }
+}
+
+interface LedgerEntry {
+  hostSessionId: string;
+  subagentId: string;
+  name: string;
+}
+
+function ledgerEntries(s: Scratch): LedgerEntry[] {
+  try {
+    return JSON.parse(readFileSync(s.ledgerPath, "utf-8")) as LedgerEntry[];
+  } catch {
+    return [];
+  }
+}
+
 describe("t250 Copilot adapter security (fail-open + path confinement)", () => {
   // --- Fail-open on malformed stdin (guidance §1.1) --------------------------
 
-  test("1: malformed JSON fails open (exit 0, no dispatch) on every target", () => {
+  test("1: malformed JSON dispatches Stop enforcement while advisory targets fail open", () => {
     const s = scratch();
     try {
       for (const t of TARGETS) {
         const r = runAdapter(s, t, "{ this is not json");
         expect(r.code).toBe(0);
       }
-      for (const hook of CORE_HOOKS) expect(reached(s.captureDir, hook)).toBe(0);
+      for (const hook of CORE_HOOKS.filter((name) => name !== "aidlc-stop.ts")) {
+        expect(reached(s.captureDir, hook)).toBe(0);
+      }
+      expect(reached(s.captureDir, "aidlc-stop.ts")).toBe(1);
+      expect(readFileSync(join(s.captureDir, "aidlc-stop.ts.jsonl"), "utf-8")).toBe(
+        "{ this is not json\n",
+      );
     } finally {
       s.cleanup();
     }
@@ -319,9 +394,52 @@ describe("t250 Copilot adapter security (fail-open + path confinement)", () => {
     }
   });
 
+  test("10: an in-project file symlink to an external target is rejected", () => {
+    const s = scratch();
+    const outside = realpathSync(mkdtempSync(join(tmpdir(), "t250-outside-")));
+    try {
+      const externalFile = join(outside, "secret.ts");
+      const linkedFile = join(s.projectRoot, "linked-secret.ts");
+      writeFileSync(externalFile, "export const secret = true;\n", "utf-8");
+      symlinkSync(externalFile, linkedFile, "file");
+
+      const r = runAdapter(s, "pre-tool", {
+        hook_event_name: "PreToolUse",
+        tool_name: "read_file",
+        tool_input: { path: linkedFile },
+      });
+      expect(r.code).toBe(0);
+      expect(reached(s.captureDir, "aidlc-reviewer-scope.ts")).toBe(0);
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+      s.cleanup();
+    }
+  });
+
+  test("11: a prospective write through an external directory symlink or junction is rejected", () => {
+    const s = scratch();
+    const outside = realpathSync(mkdtempSync(join(tmpdir(), "t250-outside-")));
+    try {
+      const linkedDir = join(s.projectRoot, "linked-dir");
+      symlinkSync(outside, linkedDir, process.platform === "win32" ? "junction" : "dir");
+
+      const r = runAdapter(s, "post-tool", {
+        hook_event_name: "PostToolUse",
+        tool_name: "create_file",
+        tool_input: { path: join(linkedDir, "prospective.ts") },
+      });
+      expect(r.code).toBe(0);
+      expect(reached(s.captureDir, "aidlc-audit-logger.ts")).toBe(0);
+      expect(reached(s.captureDir, "aidlc-sensor-fire.ts")).toBe(0);
+    } finally {
+      s.cleanup();
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
   // --- Command injection is inert: the command is DATA, never a shell ---------
 
-  test("10: a shell-metachar command is forwarded as an inert data field, not executed", () => {
+  test("12: a shell-metachar command is forwarded as an inert data field, not executed", () => {
     const s = scratch();
     try {
       const evil = "echo pwned > /tmp/t250-should-not-exist; rm -rf ~";
@@ -345,7 +463,7 @@ describe("t250 Copilot adapter security (fail-open + path confinement)", () => {
 
   // --- Deliberate block (core exit 2) → deny projection, later hooks skipped --
 
-  test("11: a core-hook exit 2 becomes a deny-JSON projection (exit 0); reviewer-scope is skipped", () => {
+  test("13: a core-hook exit 2 becomes a deny-JSON projection (exit 0); reviewer-scope is skipped", () => {
     const s = scratch();
     try {
       // Seed the state-transition guard to BLOCK. reviewer-scope must then never
@@ -376,7 +494,7 @@ describe("t250 Copilot adapter security (fail-open + path confinement)", () => {
     }
   });
 
-  test("12: a non-2 core exit code is NOT a block (allow, exit 0, no deny-JSON)", () => {
+  test("14: a non-2 core exit code is NOT a block (allow, exit 0, no deny-JSON)", () => {
     const s = scratch();
     try {
       // A crashed core hook (exit 1) must fail open — never mistaken for a block.
@@ -399,12 +517,137 @@ describe("t250 Copilot adapter security (fail-open + path confinement)", () => {
 
   // --- Fail-open when a dispatched core hook is entirely absent ----------------
 
-  test("13: a missing core hook binary fails open (spawn error → exit 0)", () => {
+  test("15: a missing core hook binary fails open (spawn error → exit 0)", () => {
     const s = scratch();
     try {
       rmSync(join(s.hooksDir, "aidlc-session-start.ts"), { force: true });
       const r = runAdapter(s, "session-start", { hook_event_name: "SessionStart" });
       expect(r.code).toBe(0);
+    } finally {
+      s.cleanup();
+    }
+  });
+
+  // --- Locked, session-namespaced reviewer identity ledger -------------------
+
+  test("16: concurrent SubagentStart transactions retain every entry and remain ambiguous", async () => {
+    const s = scratch();
+    try {
+      const hostSessionId = "vscode-session-concurrent-start";
+      const agents = Array.from({ length: 16 }, (_, index) => ({
+        id: `reviewer-${index}`,
+        name: `aidlc-reviewer-${index}-agent`,
+      }));
+      const results = await Promise.all(
+        agents.map((agent) =>
+          runAdapterAsync(s, "subagent-start", {
+            hook_event_name: "SubagentStart",
+            session_id: hostSessionId,
+            agent_id: agent.id,
+            agent_type: agent.name,
+          }),
+        ),
+      );
+      expect(results.every((result) => result.code === 0)).toBe(true);
+      expect(ledgerEntries(s).map((entry) => entry.subagentId).sort()).toEqual(
+        agents.map((agent) => agent.id).sort(),
+      );
+
+      runAdapter(s, "pre-tool", {
+        hook_event_name: "PreToolUse",
+        session_id: hostSessionId,
+        tool_name: "read_file",
+        tool_input: { path: "src/ambiguous.ts" },
+      });
+      const forwarded = capturedInputs(s.captureDir, "aidlc-reviewer-scope.ts").at(-1);
+      expect(forwarded?.agent_type).toBeUndefined();
+    } finally {
+      s.cleanup();
+    }
+  });
+
+  test("17: concurrent SubagentStop transactions remove every matching entry", async () => {
+    const s = scratch();
+    try {
+      const hostSessionId = "vscode-session-concurrent-stop";
+      const agents = Array.from({ length: 16 }, (_, index) => ({
+        id: `reviewer-${index}`,
+        name: `aidlc-reviewer-${index}-agent`,
+      }));
+      for (const agent of agents) {
+        runAdapter(s, "subagent-start", {
+          hook_event_name: "SubagentStart",
+          session_id: hostSessionId,
+          agent_id: agent.id,
+          agent_type: agent.name,
+        });
+      }
+      expect(ledgerEntries(s)).toHaveLength(agents.length);
+
+      const results = await Promise.all(
+        agents.map((agent) =>
+          runAdapterAsync(s, "log-subagent", {
+            hook_event_name: "SubagentStop",
+            session_id: hostSessionId,
+            agent_id: agent.id,
+            agent_type: agent.name,
+          }),
+        ),
+      );
+      expect(results.every((result) => result.code === 0)).toBe(true);
+      expect(ledgerEntries(s)).toEqual([]);
+    } finally {
+      s.cleanup();
+    }
+  });
+
+  test("18: ordinary VS Code session ids isolate active reviewers across host sessions", () => {
+    const s = scratch();
+    try {
+      const first = {
+        session_id: "vscode-host-session-a",
+        agent_id: "reviewer-a",
+        agent_type: "aidlc-reviewer-a-agent",
+      };
+      const second = {
+        session_id: "vscode-host-session-b",
+        agent_id: "reviewer-b",
+        agent_type: "aidlc-reviewer-b-agent",
+      };
+      for (const identity of [first, second]) {
+        runAdapter(s, "subagent-start", {
+          hook_event_name: "SubagentStart",
+          ...identity,
+        });
+      }
+
+      for (const session_id of [first.session_id, second.session_id]) {
+        runAdapter(s, "pre-tool", {
+          hook_event_name: "PreToolUse",
+          session_id,
+          tool_name: "read_file",
+          tool_input: { path: "src/session-scoped.ts" },
+        });
+      }
+      let forwarded = capturedInputs(s.captureDir, "aidlc-reviewer-scope.ts");
+      expect(forwarded.at(-2)?.agent_type).toBe(first.agent_type);
+      expect(forwarded.at(-1)?.agent_type).toBe(second.agent_type);
+
+      runAdapter(s, "log-subagent", {
+        hook_event_name: "SubagentStop",
+        ...first,
+      });
+      for (const session_id of [first.session_id, second.session_id]) {
+        runAdapter(s, "pre-tool", {
+          hook_event_name: "PreToolUse",
+          session_id,
+          tool_name: "read_file",
+          tool_input: { path: "src/session-scoped.ts" },
+        });
+      }
+      forwarded = capturedInputs(s.captureDir, "aidlc-reviewer-scope.ts");
+      expect(forwarded.at(-2)?.agent_type).toBeUndefined();
+      expect(forwarded.at(-1)?.agent_type).toBe(second.agent_type);
     } finally {
       s.cleanup();
     }

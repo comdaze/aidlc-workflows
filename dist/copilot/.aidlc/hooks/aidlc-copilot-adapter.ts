@@ -15,13 +15,12 @@
 //   1. File-tool input keys differ: Copilot sends `path` + `file_text` /
 //      `old_str` / `new_str` where the core hooks read `file_path`. The shim
 //      re-keys. Tool NAMES already match (Bash/Write/Edit/Read).
-//   2. PreToolUse carries NO agent identity. Subagent tool calls are
-//      distinguishable (their session_id is a toolu_* tool-use id, not the
-//      session UUID), and SubagentStart/SubagentStop bracket each delegation,
-//      so the shim keeps a per-project active-subagent ledger: exactly one
-//      active subagent → its name forwards as agent_type; zero or several →
-//      no identity is forwarded and the reviewer-scope hook fails open for
-//      that call (the prose §12a bound still governs; documented gap).
+//   2. PreToolUse carries NO agent identity. SubagentStart/SubagentStop bracket
+//      each delegation, so the shim keeps a locked per-project ledger keyed by
+//      host session + subagent id. VS Code tool calls correlate through their
+//      ordinary session_id; CLI toolu_* calls use an exactly-one-active CLI
+//      fallback. Zero or several candidates forward no identity, so reviewer
+//      scope fails open rather than mis-attributing the call.
 //   3. SubagentStart arrives camelCase (agentName, sessionId — live-verified
 //      quirk) while every other PascalCase-registered event arrives
 //      snake_case. Field reads tolerate both casings.
@@ -50,9 +49,18 @@
 //                  log-subagent | stop
 
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { appendAuditEntry } from "../tools/aidlc-audit.ts";
 import { stateFilePath } from "../tools/aidlc-lib.ts";
@@ -92,7 +100,9 @@ export async function run(
     try {
       copilot = JSON.parse(input) as CopilotHookInput;
     } catch {
-      return 0; // malformed stdin — advisory hooks fail open
+      // Advisory and pre-tool hooks fail open. Stop is enforcement: its core
+      // hook deliberately tolerates malformed stdin and still checks state.
+      if (target !== "stop") return 0;
     }
   }
 
@@ -112,7 +122,8 @@ export async function run(
   const sessionId = copilot.session_id ?? copilot.sessionId ?? "";
   const subagentName =
     copilot.agent_type ?? copilot.agent_name ?? copilot.agentName ?? "";
-  const subagentId = copilot.agent_id ?? copilot.agentId ?? sessionId;
+  const explicitSubagentId = copilot.agent_id ?? copilot.agentId ?? "";
+  const subagentId = explicitSubagentId || sessionId;
   const nativeToolInput = copilot.tool_input ?? copilot.toolInput;
 
   // Canonicalize the tool name across the two surfaces. The CLI sends
@@ -253,12 +264,54 @@ export async function run(
   // The adapter is the trust boundary between the host and core hooks. Paths
   // outside the project are treated as absent: the tool call still fails open,
   // but no absolute host path crosses into audit, sensor, or guard hooks.
-  const PROJECT_ROOT = resolve(projectDir);
+  const PROJECT_ROOT_LEXICAL = resolve(projectDir);
+  const PROJECT_ROOT = (() => {
+    try {
+      return realpathSync(PROJECT_ROOT_LEXICAL);
+    } catch {
+      return null;
+    }
+  })();
+
   function confinedPath(raw: string): string | null {
-    const candidate = isAbsolute(raw) ? resolve(raw) : resolve(PROJECT_ROOT, raw);
-    const rel = relative(PROJECT_ROOT, candidate);
+    if (!PROJECT_ROOT) return null;
+    const candidate = isAbsolute(raw) ? resolve(raw) : resolve(PROJECT_ROOT_LEXICAL, raw);
+    const missingSegments: string[] = [];
+    let cursor = candidate;
+    let canonical: string | null = null;
+
+    // Existing targets are resolved directly. For a prospective write, walk
+    // to the nearest existing entry, resolve it, then append only the missing
+    // lexical suffix. lstat detects broken links so they fail closed instead
+    // of being mistaken for an ordinary missing path.
+    while (true) {
+      let exists = false;
+      try {
+        lstatSync(cursor);
+        exists = true;
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code !== "ENOENT" && code !== "ENOTDIR") return null;
+      }
+
+      if (exists) {
+        try {
+          canonical = resolve(realpathSync(cursor), ...missingSegments);
+        } catch {
+          return null;
+        }
+        break;
+      }
+
+      const parent = dirname(cursor);
+      if (parent === cursor) return null;
+      missingSegments.unshift(basename(cursor));
+      cursor = parent;
+    }
+
+    const rel = relative(PROJECT_ROOT, canonical);
     if (rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return null;
-    return candidate;
+    return canonical;
   }
 
   function filePathsOf(toolInput: Record<string, unknown> | undefined): string[] {
@@ -301,43 +354,113 @@ export async function run(
 
   // --- Active-subagent ledger (difference #2) ---------------------------------
   //
-  // SubagentStart pushes, SubagentStop pops (by name; a crash-orphaned entry
-  // expires after 30 minutes). PreToolUse forwards agent_type ONLY when the
-  // call is subagent-originated (session_id is a toolu_* id) AND exactly one
-  // subagent is active — ambiguity fails open rather than mis-attributing.
+  // VS Code carries a stable host session_id plus agent_id on SubagentStart /
+  // Stop, while ordinary PreToolUse carries only that host session_id. CLI
+  // lacks an explicit subagent id and identifies delegated tool calls with a
+  // toolu_* session id, so it retains a separate exactly-one-active fallback.
+  // Every entry is namespaced by host session plus subagent id; ambiguity
+  // always fails open rather than mis-attributing a reviewer.
   const LEDGER = join(
     tmpdir(),
     `aidlc-copilot-subagents-${createHash("sha256").update(projectDir).digest("hex").slice(0, 16)}.json`,
   );
+  const LEDGER_LOCK = `${LEDGER}.lock`;
 
-  function readLedger(): Array<{ name: string; id?: string; ts: number }> {
+  interface LedgerEntry {
+    hostSessionId: string;
+    subagentId: string;
+    name: string;
+    hostCorrelated: boolean;
+    ts: number;
+  }
+
+  function acquireLedgerLock(): boolean {
+    for (let attempt = 0; attempt < 200; attempt++) {
+      try {
+        mkdirSync(LEDGER_LOCK);
+        return true;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") return false;
+        Bun.sleepSync(10);
+      }
+    }
+    return false;
+  }
+
+  function releaseLedgerLock(): void {
     try {
-      const entries = JSON.parse(readFileSync(LEDGER, "utf-8")) as Array<{
-        name: string;
-        id?: string;
-        ts: number;
-      }>;
+      rmSync(LEDGER_LOCK, { recursive: true, force: true });
+    } catch {
+      // Identity correlation is best effort; never trap a host hook.
+    }
+  }
+
+  function readLedgerUnlocked(): LedgerEntry[] {
+    try {
+      const parsed = JSON.parse(readFileSync(LEDGER, "utf-8")) as unknown;
+      if (!Array.isArray(parsed)) return [];
       const cutoff = Date.now() - 30 * 60 * 1000;
-      return entries.filter((e) => e.ts >= cutoff);
+      return parsed.filter(
+        (entry): entry is LedgerEntry =>
+          typeof entry === "object" &&
+          entry !== null &&
+          typeof entry.hostSessionId === "string" &&
+          typeof entry.subagentId === "string" &&
+          typeof entry.name === "string" &&
+          typeof entry.hostCorrelated === "boolean" &&
+          typeof entry.ts === "number" &&
+          entry.ts >= cutoff,
+      );
     } catch {
       return [];
     }
   }
 
-  function writeLedger(entries: Array<{ name: string; id?: string; ts: number }>): void {
+  function writeLedgerUnlocked(entries: LedgerEntry[]): void {
+    const temp = `${LEDGER}.${process.pid}.${Date.now()}.tmp`;
     try {
-      mkdirSync(dirname(LEDGER), { recursive: true });
-      writeFileSync(LEDGER, JSON.stringify(entries), "utf-8");
+      writeFileSync(temp, JSON.stringify(entries), "utf-8");
+      renameSync(temp, LEDGER);
     } catch {
       // ledger is best-effort identity correlation — never block the turn
+    } finally {
+      try {
+        rmSync(temp, { force: true });
+      } catch {
+        // rename already consumed the temp file in the normal path
+      }
+    }
+  }
+
+  function readLedger(): LedgerEntry[] {
+    if (!acquireLedgerLock()) return [];
+    try {
+      return readLedgerUnlocked();
+    } finally {
+      releaseLedgerLock();
+    }
+  }
+
+  function updateLedger(update: (entries: LedgerEntry[]) => void): void {
+    if (!acquireLedgerLock()) return;
+    try {
+      const entries = readLedgerUnlocked();
+      update(entries);
+      writeLedgerUnlocked(entries);
+    } finally {
+      releaseLedgerLock();
     }
   }
 
   function activeSubagentType(): string | null {
     if (copilot.agent_type) return copilot.agent_type;
-    if (!sessionId.startsWith("toolu_")) return null; // main-session call
     const entries = readLedger();
-    return entries.length === 1 ? entries[0].name : null;
+    const candidates = sessionId.startsWith("toolu_")
+      ? entries.filter((entry) => !entry.hostCorrelated)
+      : entries.filter(
+          (entry) => entry.hostCorrelated && entry.hostSessionId === sessionId,
+        );
+    return candidates.length === 1 ? candidates[0].name : null;
   }
 
   // --- Targets ----------------------------------------------------------------
@@ -489,9 +612,30 @@ export async function run(
 
     case "subagent-start": {
       if (subagentName) {
-        const entries = readLedger();
-        entries.push({ name: subagentName, ...(subagentId ? { id: subagentId } : {}), ts: Date.now() });
-        writeLedger(entries);
+        const hostCorrelated = explicitSubagentId.length > 0;
+        const ledgerSubagentId =
+          explicitSubagentId || `cli-${process.pid}-${Date.now()}`;
+        const entry: LedgerEntry = {
+          hostSessionId: sessionId,
+          subagentId: ledgerSubagentId,
+          name: subagentName,
+          hostCorrelated,
+          ts: Date.now(),
+        };
+        updateLedger((entries) => {
+          if (hostCorrelated) {
+            const existing = entries.findIndex(
+              (candidate) =>
+                candidate.hostSessionId === sessionId &&
+                candidate.subagentId === ledgerSubagentId,
+            );
+            if (existing >= 0) {
+              entries[existing] = entry;
+              return;
+            }
+          }
+          entries.push(entry);
+        });
       }
       return 0;
     }
@@ -500,13 +644,30 @@ export async function run(
       // SubagentStop carries agent_name (+ display name); the core hook reads
       // agent_type/agent_id. Pop the ledger entry, then forward.
       if (subagentName) {
-        const entries = readLedger();
-        let idx = subagentId
-          ? entries.map((e) => e.id).lastIndexOf(subagentId)
-          : -1;
-        if (idx < 0) idx = entries.map((e) => e.name).lastIndexOf(subagentName);
-        if (idx >= 0) entries.splice(idx, 1);
-        writeLedger(entries);
+        updateLedger((entries) => {
+          let idx = -1;
+          if (explicitSubagentId) {
+            idx = entries.findIndex(
+              (entry) =>
+                entry.hostCorrelated &&
+                entry.hostSessionId === sessionId &&
+                entry.subagentId === explicitSubagentId,
+            );
+          } else {
+            for (let i = entries.length - 1; i >= 0; i--) {
+              const entry = entries[i];
+              if (
+                !entry.hostCorrelated &&
+                entry.hostSessionId === sessionId &&
+                entry.name === subagentName
+              ) {
+                idx = i;
+                break;
+              }
+            }
+          }
+          if (idx >= 0) entries.splice(idx, 1);
+        });
       }
       runCore(
         "aidlc-log-subagent.ts",

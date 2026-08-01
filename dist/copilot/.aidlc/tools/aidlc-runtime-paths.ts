@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 const MODULE_TOOLS_DIR = dirname(fileURLToPath(import.meta.url));
 const MODULE_HARNESS_ROOT = join(MODULE_TOOLS_DIR, "..");
-const KNOWN_HARNESSES = [".claude", ".kiro", ".codex"] as const;
+const KNOWN_HARNESSES = [".claude", ".kiro", ".codex", ".aidlc"] as const;
 
 export interface HarnessLocation {
   harnessDir?: string;
@@ -85,18 +85,10 @@ export function runtimeHarnessName(
     if (name) return name;
   }
 
-  if (harnessDir === ".aidlc") {
-    const workspaceRoot = basename(projectDir) === harnessDir
-      ? dirname(projectDir)
-      : projectDir;
-    if (
-      existsSync(join(workspaceRoot, ".github", "hooks", "aidlc.json")) ||
-      existsSync(join(projectRoot, "hooks", "aidlc-copilot-adapter.ts"))
-    ) {
-      return "copilot";
-    }
-    return "opencode";
-  }
+  // Copilot and OpenCode intentionally share .aidlc. Their harness.json name
+  // above is the authoritative discriminator; retain OpenCode only as the
+  // metadata-unavailable compatibility fallback.
+  if (harnessDir === ".aidlc") return "opencode";
   if (harnessDir === ".codex") return "codex";
   if (harnessDir === ".kiro") return "kiro";
   return "claude";
